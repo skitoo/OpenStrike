@@ -1,0 +1,11 @@
+[package]
+name = "openstrike"
+version = "0.1.0"
+description = "OpenStrike client: the raylib shell around the formats and the simulation"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+openstrike-formats.workspace = true
+openstrike-sim.workspace = true
+raylib = { workspace = true, features = ["SUPPORT_IMAGE_GENERATION"] }
