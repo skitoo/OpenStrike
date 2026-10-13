@@ -1,0 +1,14 @@
+[workspace]
+resolver = "3"
+members = ["crates/formats", "crates/sim", "crates/client"]
+
+[workspace.package]
+edition = "2024"
+repository = "https://git.skitoo.net/skitoo/OpenStrike"
+
+[workspace.dependencies]
+openstrike-formats = { path = "crates/formats" }
+openstrike-sim = { path = "crates/sim" }
+flate2 = "1.1"
+thiserror = "2.0"
+raylib = "6.0"

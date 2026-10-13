@@ -1,0 +1,10 @@
+[package]
+name = "openstrike-formats"
+version = "0.1.0"
+description = "Pure decoders for the Sudden Strike data formats"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
+flate2.workspace = true
+thiserror.workspace = true
