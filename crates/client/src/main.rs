@@ -27,6 +27,9 @@ struct Options {
     map: PathBuf,
     climate: String,
     screenshot: Option<PathBuf>,
+    /// Map pixel to centre the camera on at start (defaults to the tank).
+    look_at: Option<(i32, i32)>,
+    zoom: f32,
 }
 
 fn options() -> Options {
@@ -36,12 +39,21 @@ fn options() -> Options {
         map: PathBuf::new(),
         climate: "summer".into(),
         screenshot: None,
+        look_at: None,
+        zoom: 1.0,
     };
     while let Some(a) = args.next() {
         match a.as_str() {
             "--data" => o.data = args.next().map(PathBuf::from).unwrap_or(o.data),
             "--climate" => o.climate = args.next().unwrap_or(o.climate),
             "--screenshot" => o.screenshot = args.next().map(PathBuf::from),
+            "--zoom" => o.zoom = args.next().and_then(|v| v.parse().ok()).unwrap_or(o.zoom),
+            "--look-at" => {
+                o.look_at = args.next().and_then(|v| {
+                    let (x, y) = v.split_once(',')?;
+                    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
+                })
+            }
             _ => o.map = PathBuf::from(a),
         }
     }
@@ -166,8 +178,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let mut world = initial_world(&assets);
     let tank_start = world.unit(TANK).map(|u| u.pos).unwrap_or_default();
-    let (tx, ty) = proj.to_screen(tank_start.x / SUBPIXEL, tank_start.y / SUBPIXEL);
-    let mut cam = Camera { x: tx as f32 - 640.0, y: ty as f32 - 400.0, zoom: 1.0 };
+    let (lx, ly) = opts.look_at.unwrap_or((tank_start.x / SUBPIXEL, tank_start.y / SUBPIXEL));
+    let (tx, ty) = proj.to_screen(lx, ly);
+    let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
     let mut pending: Vec<Command> = Vec::new();
     if opts.screenshot.is_some() {
         pending.push(Command::Move { unit: TANK, to: tank_start + Vec2::new(-165 * SUBPIXEL, 325 * SUBPIXEL) });
