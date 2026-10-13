@@ -1,0 +1,21 @@
+# Original game data is copyrighted: never commit it.
+data/
+*.sue
+*.ssm
+*.ssc
+*.smm
+*.sss
+*.bik
+*.exe
+*.dll
+*.EXE
+
+# Analysis databases (Ghidra, Hopper, IDA)
+*.gpr
+*.rep/
+*.hop
+*.idb
+*.i64
+
+.DS_Store
+build/
