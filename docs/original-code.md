@@ -205,7 +205,10 @@ Unit sprites go through `0x100068d0` and `0x1000d0d0` (layer given by the caller
 | `cad800.dll` `0x10007938`, `0x100098db` | shadow blitters: 7-bit runs, darken once per pixel, flag in the pixel word |
 | `cad800.dll` `0x101f2e50` | per-pixel word (800 x 600): depth `y << 5` in the high bits, flags in bits 0-2 and 15; `0x100026f0` fills a rectangle with depths, `0x10002790` clears bit 2, `0x10002820` adds to the depths |
 | `cad800.dll` `0x10012b38`, `0x10012b40`, `0x10012b58` | lowest bit of each colour field (`0x0821`), its complement, shadow tint (`0x0085` in RGB565), set from the pixel format at `0x10001150` |
-| `cad800.dll` `0x1001d49c` | table of drawing functions filled by `CADraw_Init` (`+0x28` = shadow blitter) |
+| `cad800.dll` `0x1001d49c` | table of drawing functions filled by `CADraw_Init` (`+0x28` = shadow blitter). The game reaches it through `[0x10388598]` = `cad800.dll` `0x10012af0`: its call `[drv + N]` runs the function stored at `0x10012af0 + N` (`+0xaa5c` sprite dispatcher, `+0xa9d4` shadow blitter, `+0xa9b4` ground rhomb) |
+| `0x1004be20` | calls a function for each cell under a screen rectangle, row by row (screen y step 16) then x step 64; cell (cx, cy) has its rhomb's top vertex at screen ((cx - cy) * 32, (cx + cy) * 16) |
+| `0x100700e0`, `0x100701a0` | ground: draws a cell at least 4 cells from the edge with its rhomb and the levels (map word >> 11) of (x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1); the 4-cell border with the empty rhomb `0x1037f158` at level 0 (black) |
+| `cad800.dll` `0x10001ea0` -> `0x10003430` | rhomb rasteriser: rows 3, 7, ..., 63, 61, ..., 1 centred on the top vertex; level in 8.8 fixed point interpolated over the top triangle (cell, x + 1, y + 1) and the bottom one (y + 1, x + 1, (x + 1, y + 1)); colour from table `0x10014e5c` (`rhomb.pl` as loaded by `0x1004fac0`), palette `level` or `level + 32` in a checkerboard whose phase (`0x10010049`) flips with every drawn row; the screen is a ring buffer (`0xea600` bytes) |
 | `QED.EXE` `0x415fa0` | `.ssm` writer |
 | `0x100516e7` | bridge state: quarter open if grid bit `0x10 << state` |
 | `0x100500c0`, `0x100511d0`, `0x10050890` | house instance, drawing (4 groups per state), state from hit points |

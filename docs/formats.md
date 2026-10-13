@@ -158,9 +158,13 @@ a byte grid (0x415740); two size-prefixed blocks (0x415a70, 0x415cb0); 2x i16 pa
 Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps the used rhombs, 0x400 bytes each).
 
 - `mappic.rs2` (one per climate archive): raw 8-bit **rhombs** of 1024 bytes, each a 64x32 diamond whose rows
-  are 2, 6, ..., 62, 62, ..., 2 pixels wide.
-- `rhomb.pl`: 64 palettes of 256 RGB565 colours. They are **brightness levels** (0 dark, 63 bright); the 5-bit
-  selector of each cell picks one (16 almost everywhere on the sample map, 31 on a few cells).
+  are 3, 7, ..., 63, 61, ..., 1 pixels wide, every row centred on the top vertex (`cad800.dll` `0x10003430`).
+- `rhomb.pl`: 64 palettes of 256 RGB565 colours: two ramps of 32 **brightness levels** (0 dark, 31 bright),
+  palettes 0-31 and 32-63, the second slightly brighter. The 5-bit level of each cell (16 almost everywhere on
+  the sample map, 31 on a few cells) is the level at the rhomb's top vertex: the game interpolates the level of
+  each pixel between the cell, the cells at x + 1 (right vertex), y + 1 (left vertex) and (x + 1, y + 1) (bottom
+  vertex), and alternates palettes `level` and `level + 32` in a checkerboard.
+- Cells within 4 cells of the map edge are drawn black (`Game_Dll.dll` `0x100701a0`).
 - **Isometric projection** (inferred, see below): map pixel (x, y) is drawn at screen (x - y, (x + y) / 2), so a
   32x32 cell becomes a 64x32 rhomb, and cell (cx, cy) is centred at ((cx - cy) * 32, (cx + cy) * 16 + 16).
   Evidence: rail pieces (`trop` frame 48, a diagonal 140x68 sprite) are placed at a constant x every 80 map pixels;
