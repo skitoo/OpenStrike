@@ -26,7 +26,7 @@ Analysed version: Sudden Strike Gold (Steam), 510 MB.
 Reader: `Game_Dll.dll` `0x10092ea0` (opens an archive, checks the `FZFS` magic `0x53465a46`, loads the directory).
 Directory blocks are read by `0x10093010`; entries are inserted into a 4096-slot hash table by `0x10093090`.
 Up to 16 archives can be mounted. A `^` prefix on the path forces overriding entries already present.
-Extractor: `tools/sue_extract.py`, verified on all 24 archives (2,963 files, sizes checked).
+Extractor: `tools/sue_extract.py`, verified on all 24 archives (2,943 files, sizes checked).
 
 ```
 "FZFS"  u32 dir_off                  directory at file offset 8 + dir_off (end of the file)
