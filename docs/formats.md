@@ -88,6 +88,10 @@ shadow pixels (n up to 127), `0x80 | n` skips n pixels. Each screen pixel has a 
 brightness, +4/63 green, +5/31 blue). So overlapping shadows darken once. Colour sprites drawn later on a pixel whose
 word has bit 1 set are darkened the same way (`0x10004c4b`); which shadows set bit 1 rather than another bit is
 not read yet (the game reaches `cad800.dll` through a table handed over by the executable).
+To check against the screen: `cad640.dll`, `cad800.dll` and `cad1024.dll` all compute the same tint. A screenshot
+found on the Internet (version unknown) shows neutral shadows instead, about 0.64 times the lit colour (road
+(120, 114, 102) -> (78, 73, 65)); the formula above would give (57, 73, 90). A screenshot of Sudden Strike Gold
+itself is needed to settle it.
 
 Unit files hold the colour frames first, then the shadows (BRON: 288 frames, shadows from 160, 64 of them).
 
