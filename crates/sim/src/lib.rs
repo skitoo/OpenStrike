@@ -43,6 +43,56 @@ pub struct Unit {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
     Move { unit: UnitId, to: Vec2 },
+    /// Move several units to the same spot: each gets its own place around it (see [`formation`]).
+    MoveGroup { units: Vec<UnitId>, to: Vec2 },
+}
+
+/// Spacing between units of a group, in sub-units (three terrain tiles, about a tank length).
+pub const FORMATION_SPACING: i32 = 3 * terrain::TILE * SUBPIXEL;
+
+/// Places for `count` units around `to`: the centre, then rings outwards, in a fixed order.
+pub fn formation(to: Vec2, count: usize) -> Vec<Vec2> {
+    let mut places = Vec::with_capacity(count);
+    let mut ring = 0i32;
+    while places.len() < count {
+        if ring == 0 {
+            places.push(to);
+        } else {
+            // walk the square ring of radius `ring`, starting at its top-left corner
+            for i in 0..8 * ring {
+                let (side, k) = (i / (2 * ring), i % (2 * ring));
+                let (dx, dy) = match side {
+                    0 => (-ring + k, -ring),
+                    1 => (ring, -ring + k),
+                    2 => (ring - k, ring),
+                    _ => (-ring, ring - k),
+                };
+                places.push(to + Vec2::new(dx * FORMATION_SPACING, dy * FORMATION_SPACING));
+                if places.len() == count {
+                    break;
+                }
+            }
+        }
+        ring += 1;
+    }
+    places
+}
+
+/// The destination each command gives to each unit, the last command winning.
+fn destinations(commands: &[Command]) -> Vec<(UnitId, Vec2)> {
+    let mut out = Vec::new();
+    for c in commands {
+        match c {
+            Command::Move { unit, to } => out.push((*unit, *to)),
+            Command::MoveGroup { units, to } => {
+                let mut sorted = units.clone();
+                sorted.sort();
+                sorted.dedup();
+                out.extend(sorted.iter().copied().zip(formation(*to, sorted.len())));
+            }
+        }
+    }
+    out
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -65,17 +115,15 @@ impl World {
 
 /// Advance the world by one tick.
 pub fn step(world: &World, terrain: &Terrain, commands: &[Command]) -> World {
+    let destinations = destinations(commands);
     let units = world
         .units
         .iter()
         .map(|unit| {
-            let order = commands
+            let order = destinations
                 .iter()
-                .filter_map(|c| match c {
-                    Command::Move { unit: id, to } if *id == unit.id => Some(plan(terrain, unit.pos, clamp(*to, world.size))),
-                    _ => None,
-                })
-                .next_back()
+                .rfind(|(id, _)| *id == unit.id)
+                .map(|(_, to)| plan(terrain, unit.pos, clamp(*to, world.size)))
                 .unwrap_or_else(|| unit.order.clone());
             advance(Unit { order, ..unit.clone() })
         })

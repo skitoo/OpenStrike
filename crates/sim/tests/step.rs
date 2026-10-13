@@ -105,3 +105,31 @@ fn step_does_not_touch_its_input() {
     let _ = step(&before, &open(), &[move_to(500, 500)]);
     assert_eq!(before, world());
 }
+
+#[test]
+fn a_group_spreads_around_the_target() {
+    use openstrike_sim::{FORMATION_SPACING, formation};
+    let places = formation(Vec2::new(1000, 1000), 9);
+    assert_eq!(places[0], Vec2::new(1000, 1000));
+    let mut unique = places.clone();
+    unique.sort_by_key(|p| (p.x, p.y));
+    unique.dedup();
+    assert_eq!(unique.len(), 9);
+    assert!(places.iter().all(|p| (p.x - 1000).abs() <= FORMATION_SPACING && (p.y - 1000).abs() <= FORMATION_SPACING));
+}
+
+#[test]
+fn group_moves_send_each_unit_to_its_own_place() {
+    let units: Vec<Unit> = (1..=4).map(|i| Unit { id: UnitId(i), pos: Vec2::new(i as i32 * T, T / 2), ..tank(0, 0) }).collect();
+    let w = World::new(Vec2::new(4096 * SUBPIXEL, 4096 * SUBPIXEL), units);
+    let ids = vec![UnitId(3), UnitId(1), UnitId(4), UnitId(2)];
+    let mut w = step(&w, &open(), &[Command::MoveGroup { units: ids, to: Vec2::new(40 * T, 40 * T) }]);
+    for _ in 0..1000 {
+        w = step(&w, &open(), &[]);
+    }
+    let mut ends: Vec<Vec2> = w.units.iter().map(|u| u.pos).collect();
+    assert!(w.units.iter().all(|u| u.order == Order::Idle));
+    ends.sort_by_key(|p| (p.x, p.y));
+    ends.dedup();
+    assert_eq!(ends.len(), 4, "units stacked on the same spot");
+}
