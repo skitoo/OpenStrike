@@ -200,7 +200,8 @@ Unit sprites go through `0x100068d0` and `0x1000d0d0` (layer given by the caller
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
-| `cad800.dll` `0x100044f5` | sprite RLE blitter; `0x10001c13` colour key `0xF81F` |
+| `cad800.dll` `0x100044f5` | sprite RLE blitter (`0xa2` format); `0x10001c13` colour key `0xF81F` |
+| `cad800.dll` `0x10008edd` | sprite dispatcher by kind: `0xa1` `0x10008f4c`, `0xa2` `0x100095a6`, `0xa3` `0x100098db`, `0xa9` `0x10009228` |
 | `cad800.dll` `0x10007938`, `0x100098db` | shadow blitters: 7-bit runs, darken once per pixel, flag in the pixel word |
 | `cad800.dll` `0x101f2e50` | per-pixel word (800 x 600): depth `y << 5` in the high bits, flags in bits 0-2 and 15; `0x100026f0` fills a rectangle with depths, `0x10002790` clears bit 2, `0x10002820` adds to the depths |
 | `cad800.dll` `0x10012b38`, `0x10012b40`, `0x10012b58` | lowest bit of each colour field (`0x0821`), its complement, shadow tint (`0x0085` in RGB565), set from the pixel format at `0x10001150` |

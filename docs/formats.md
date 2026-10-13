@@ -71,15 +71,20 @@ file  = u32 offsets[n + 1] from byte 0           (frame i = offsets[i]..offsets[
 frame = i16 x0, i16 y0      anchor offset (draw at position + (x0, y0))
         u16 width, u16 height
         u8  kind            0xa1 / 0xa2 / 0xa9 colour, 0xa3 shadow, 0xa5 unknown
-        rows[height]: u16 byte length, then commands (top 2 bits = mode, low 6 bits = n)
+        rows[height]: u16 byte length, then commands
 ```
 
-| Mode | Colour frames (blitter `cad800.dll` `0x100044f5`) |
-|---|---|
-| `0x00 \| n` | copy n palette pixels (`0x100045ab`) |
-| `0x40 \| n` | copy n pixels blended 50 % with the background: `(src + dst - ((src ^ dst) & mask)) >> 1` (`0x100045d0`), anti-aliased edges |
-| `0x80 \| n` | repeat the next palette pixel n times (`0x10004620`) |
-| `0xC0 \| n` | skip n pixels |
+The drawing dispatcher (`cad800.dll` `0x10008edd`) picks the row format from the kind. Checked on every sprite of
+the data: each kind's rows end exactly on their byte length with its own format, and only with it.
+
+| Kind | Blitter | Commands |
+|---|---|---|
+| `0xa2` (all unit sprites, ground sprites) | `0x100095a6`, also `0x100044f5` | 2-bit mode, 6-bit n: `0x00` copy n palette pixels; `0x40` copy n pixels blended 50 % with the background, `(src + dst - ((src ^ dst) & mask)) >> 1`; `0x80` repeat the next palette pixel n times; `0xC0` skip n |
+| `0xa1` (upright sprites of map objects) | `0x10008f4c` | 7-bit n: `0x00` copy n palette pixels; `0x80`, then a palette index c: c = 0 skips n, else repeats c n times |
+| `0xa9` | `0x10009228` | as `0xa1`, colours from a 32-bit table with a per-colour alpha (bits 19-23, 31 = opaque; not applied yet) |
+
+Reading `0xa1` sprites with the `0xa2` format (as OpenStrike did before) cuts rows apart: bits of ships and cranes
+float beside them.
 
 Shadow frames (`0xa3`, blitters `0x10007938` and `0x100098db`) use 1-bit modes with 7-bit counts: `0x00 | n` is n
 shadow pixels (n up to 127), `0x80 | n` skips n pixels. Each screen pixel has a 16-bit word (buffer `0x101f2e50`,

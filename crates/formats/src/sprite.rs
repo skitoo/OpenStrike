@@ -1,17 +1,21 @@
 //! Sprites: `.pck` (units, effects) and `.rs2` (map objects) frame containers.
 //!
-//! Blitters in the original game: `cad800.dll` `0x100044f5` (colour), `0x10007938` and
-//! `0x100098db` (shadows).
+//! The drawing dispatcher of the original game (`cad800.dll` `0x10008edd`) picks the row format
+//! from the frame kind: 0xa2 `0x100095a6` (also `0x100044f5`), 0xa1 `0x10008f4c`, 0xa9
+//! `0x10009228`, shadows 0xa3 `0x100098db` (also `0x10007938`).
 //!
 //! ```text
 //! frame = i16 x0, i16 y0 (anchor), u16 width, u16 height, u8 kind
 //!         rows[height]: u16 byte length, then commands
-//!   colour frames (2-bit mode, 6-bit count n)   shadow frames, kind 0xa3 (1-bit mode, 7-bit count n)
-//!   0x00 | n  copy n palette pixels               0x00 | n  n shadow pixels (n up to 127)
-//!   0x40 | n  copy n pixels, 50 % blend           0x80 | n  skip n pixels
-//!   0x80 | n  repeat next pixel n times
+//!   kind 0xa2 (2-bit mode, 6-bit count n)   kinds 0xa1, 0xa9 (7-bit count n)    kind 0xa3 shadows
+//!   0x00 | n  copy n palette pixels         0x00 | n  copy n palette pixels     0x00 | n  n shadow pixels
+//!   0x40 | n  copy n pixels, 50 % blend     0x80 | n, c  c = 0: skip n,         0x80 | n  skip n pixels
+//!   0x80 | n  repeat next pixel n times                 else repeat c n times
 //!   0xC0 | n  skip n pixels
 //! ```
+//!
+//! On every sprite of the game's data, each kind's rows end exactly on their byte length with this
+//! table (0xa1: the map objects' upright sprites; units are all 0xa2).
 //!
 //! A shadow pixel darkens what is under it once, however many shadows cover it: the game keeps a
 //! flag per screen pixel and draws `((pixel & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness,
@@ -22,6 +26,10 @@ use crate::reader::{Reader, u32_at};
 use crate::{Error, Result};
 
 pub const KIND_SHADOW: u8 = 0xa3;
+/// Colour frames with 7-bit runs (`cad800.dll` `0x10008f4c`).
+pub const KIND_WIDE: u8 = 0xa1;
+/// Like [`KIND_WIDE`] with a per-colour alpha (`0x10009228`); the alpha is not applied yet.
+pub const KIND_ALPHA: u8 = 0xa9;
 pub const KIND_UNKNOWN_A5: u8 = 0xa5;
 
 /// Alpha values used for the decoded pixels.
@@ -105,15 +113,21 @@ pub fn frame_len(data: &[u8], at: usize) -> Option<usize> {
         while i < line.len() {
             let op = line[i];
             i += 1;
-            let n = if kind == KIND_SHADOW { op & 0x7f } else { op & 0x3f } as usize;
+            let wide = matches!(kind, KIND_SHADOW | KIND_WIDE | KIND_ALPHA);
+            let n = if wide { op & 0x7f } else { op & 0x3f } as usize;
             x += n;
-            if kind != KIND_SHADOW {
-                i += match op >> 6 {
+            if kind == KIND_SHADOW {
+                continue;
+            }
+            i += if wide {
+                if op & 0x80 != 0 { 1 } else { n }
+            } else {
+                match op >> 6 {
                     2 => 1,
                     3 => 0,
                     _ => n,
-                };
-            }
+                }
+            };
         }
         if i != line.len() || x > w {
             return None;
@@ -136,6 +150,7 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
         return Err(Error::Unsupported("sprite frame kind 0xa5".into()));
     }
     let shadow = kind == KIND_SHADOW;
+    let wide = matches!(kind, KIND_WIDE | KIND_ALPHA);
     let mut rgba = vec![0u8; w * h * 4];
     for y in 0..h {
         let length = r.u16()? as usize;
@@ -152,6 +167,27 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
                 let n = (op & 0x7f) as usize;
                 if op & 0x80 == 0 {
                     (x..x + n).for_each(|i| put(i, [255, 255, 255], SHADOW_MASK[3]));
+                }
+                x += n;
+                continue;
+            }
+            if wide {
+                // 0xa1 / 0xa9 (cad800.dll 0x10009149): 7-bit counts; with bit 7, a colour byte
+                // follows, 0 meaning skip, else a run of that colour
+                let n = (op & 0x7f) as usize;
+                if op & 0x80 != 0 {
+                    let Ok(c) = line.u8() else { break };
+                    let c = c as usize;
+                    if c != 0 && !palette.transparent[c] {
+                        (x..x + n).for_each(|i| put(i, palette.colours[c], ALPHA_OPAQUE));
+                    }
+                } else {
+                    let take = n.min(length - line.pos());
+                    for (i, &c) in line.bytes(take)?.iter().enumerate() {
+                        if !palette.transparent[c as usize] {
+                            put(x + i, palette.colours[c as usize], ALPHA_OPAQUE);
+                        }
+                    }
                 }
                 x += n;
                 continue;
