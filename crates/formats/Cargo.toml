@@ -3,6 +3,7 @@ name = "openstrike-formats"
 version = "0.1.0"
 description = "Pure decoders for the Sudden Strike data formats"
 edition.workspace = true
+license.workspace = true
 repository.workspace = true
 
 [dependencies]

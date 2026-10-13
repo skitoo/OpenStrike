@@ -4,6 +4,7 @@ members = ["crates/formats", "crates/sim", "crates/client"]
 
 [workspace.package]
 edition = "2024"
+license = "GPL-3.0-or-later"
 repository = "https://git.skitoo.net/skitoo/OpenStrike"
 
 [workspace.dependencies]

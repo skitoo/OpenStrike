@@ -3,6 +3,7 @@ name = "openstrike"
 version = "0.1.0"
 description = "OpenStrike client: the raylib shell around the formats and the simulation"
 edition.workspace = true
+license.workspace = true
 repository.workspace = true
 
 [dependencies]

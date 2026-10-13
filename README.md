@@ -39,3 +39,8 @@ Controls: right click to move, arrows / WASD or middle drag to scroll, wheel to 
 - `crates/` the engine
 - `docs/` technical notes (file formats, game logic)
 - `tools/` Python analysis and extraction scripts
+
+## License
+
+OpenStrike is free software, released under the GNU General Public License version 3 or later (see `LICENSE`).
+It contains no data from the original game, which remains the property of its rights holders.
