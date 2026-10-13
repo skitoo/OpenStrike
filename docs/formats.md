@@ -87,7 +87,8 @@ The exact shadow strength still has to be read from the shadow blitter.
 Not handled yet:
 - `xx 00 00 CA` container (47 files: briefing backgrounds 640x480, menu animations, `d_shadow`);
 - kind `0xa5` (258 frames, menus);
-- a few odd files (`SHOT.PCK`, `STR.PCK`, menu fonts).
+- `PARA.PCK` (header 21, table of 43 offsets) and menu fonts. `SHOT.PCK` and `STR.PCK` (u32 frame count, then
+  count + 1 offsets) are handled.
 - `.hot` (hotspots?) and `.ani` (animations): to analyse.
 
 ## Vehicle sprite layout and `.hot` attachment points
@@ -185,8 +186,9 @@ an empty colour sprite, a shadow and a ground sprite. The intact state is slots 
 
 **House footprints** (`dom`): after the 512-byte palette come a u16, a u32, then a **14x14 grid** (read by the loader
 at `Game_Dll.dll` `0x10050980`, which then reads 8 more bytes and single bytes). Each grid tile is 16x16 map pixels.
-Values 0x40 / 0x04 form the solid building, 0x01-0x03 ring it (inferred). Grid tile (6, 6) is under the object position:
-fitted by aligning the solid tiles with the house's ground sprite (best for 75 of the 113 summer houses).
+Tiles with **bit 0x01** block: the original writes houses into the map passability in `Game_Dll.dll` `0x10054cda`,
+`0x10054f02` and `0x10055694`, which loop over the 14x14 grid, test `grid & 0x01`, and compute the tile as
+`(x >> 4) + gx - 6`: grid tile (6, 6) is under the object position, at 16 px resolution.
 
 **Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000,
 then a table of sprite offsets relative to byte 1000. Starting the grid at 516 is the only offset that leaves no deck

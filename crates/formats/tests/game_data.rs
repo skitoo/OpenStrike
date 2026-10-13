@@ -103,6 +103,18 @@ fn house_footprints_have_a_solid_core() {
     let grid = set.footprints[0].unwrap();
     let solid: usize = grid.iter().flatten().filter(|&&v| v & FOOTPRINT_SOLID != 0).count();
     assert!((10..60).contains(&solid), "{solid} solid cells");
-    // the centre of the grid is inside the building
+    // the cell under the object position is inside the building
     assert_ne!(grid[6][6] & FOOTPRINT_SOLID, 0);
+}
+
+#[test]
+fn counted_unit_sprites_decode() {
+    let Some(dir) = data_dir() else { return };
+    let units = Archive::parse(std::fs::read(dir.join("units.sue")).unwrap()).unwrap();
+    // para.pck is another layout (its header says 21 frames, its table holds 43 offsets): not decoded yet
+    for name in ["shot", "str"] {
+        let pck = units.read(&format!("{name}.pck")).unwrap().unwrap();
+        let frames = sprite::pck_frames(&pck).unwrap();
+        assert!(frames.iter().all(|f| f.is_empty() || sprite::frame_len(f, 0) == Some(f.len())), "{name}: frames do not parse");
+    }
 }

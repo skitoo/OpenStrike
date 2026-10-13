@@ -50,12 +50,18 @@ fn slices<'a>(data: &'a [u8], offsets: &[usize]) -> Vec<&'a [u8]> {
 }
 
 /// Split a `.pck` into frames: either `offsets[n + 1]` from byte 0, or a u32 header then the table.
+/// A header that is exactly the frame count (the table that follows holds count + 1 offsets) is
+/// checked first: when the count is a multiple of 4, the file would otherwise also look like a
+/// table starting at byte 0 (`SHOT.PCK`, 192 frames).
 pub fn pck_frames(data: &[u8]) -> Result<Vec<&[u8]>> {
     if data.get(3) == Some(&0xCA) {
         return Err(Error::Unsupported("CA container .pck".into()));
     }
-    let offsets = offset_table(data, 0)
-        .or_else(|| offset_table(data, 4))
+    let counted = match (u32_at(data, 0), u32_at(data, 4)) {
+        (Ok(count), Ok(first)) => (count as u64 + 1) * 4 + 4 == first as u64,
+        _ => false,
+    };
+    let offsets = if counted { offset_table(data, 4) } else { offset_table(data, 0).or_else(|| offset_table(data, 4)) }
         .ok_or_else(|| Error::Invalid("unrecognised .pck layout".into()))?;
     Ok(slices(data, &offsets))
 }

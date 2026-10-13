@@ -104,3 +104,12 @@ fn frame_len_finds_exact_frames_only() {
     assert_eq!(sprite::frame_len(&data, 0), None);
     assert_eq!(sprite::frame_len(&data, 4), None);
 }
+
+#[test]
+fn a_frame_count_that_is_a_multiple_of_4_is_not_taken_for_an_offset() {
+    // count 4, then offsets [24, 26, 28, 30, 32] from byte 4, then 4 frames of 2 bytes
+    let mut d: Vec<u8> = [4u32, 24, 26, 28, 30, 32].iter().flat_map(|v| v.to_le_bytes()).collect();
+    d.extend([1, 1, 2, 2, 3, 3, 4, 4]);
+    let frames = sprite::pck_frames(&d).unwrap();
+    assert_eq!(frames, vec![&[1u8, 1][..], &[2, 2][..], &[3, 3][..], &[4, 4][..]]);
+}
