@@ -36,11 +36,9 @@ struct SpriteTexture {
 }
 
 fn upload_sprite(rl: &mut RaylibHandle, thread: &RaylibThread, s: &Sprite) -> SpriteTexture {
-    SpriteTexture {
-        anchor: s.anchor,
-        size: (s.width as i32, s.height as i32),
-        texture: upload(rl, thread, s.width, s.height, &s.rgba),
-    }
+    // an empty sprite still gets a 1x1 transparent texture, so that part indices stay aligned
+    let (w, h, rgba) = if s.width == 0 || s.height == 0 { (1, 1, &[0u8; 4][..]) } else { (s.width, s.height, &s.rgba[..]) };
+    SpriteTexture { anchor: s.anchor, size: (w as i32, h as i32), texture: upload(rl, thread, w, h, rgba) }
 }
 
 fn upload_strip(rl: &mut RaylibHandle, thread: &RaylibThread, sprites: &[Sprite]) -> Vec<SpriteTexture> {
@@ -157,7 +155,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let proj = assets.projection;
     let (screen_w, screen_h) = proj.screen_size();
     let objects = scene::objects(&assets.map, &proj, &assets.object_sets);
-    let terrain = terrain::build(&assets.map, &assets.object_sets);
+    let terrain = terrain::build(&assets.map);
     let mut show_blocked = opts.show_blocked;
 
     let (mut rl, thread) = raylib::init().size(1280, 800).title("OpenStrike").resizable().build();
@@ -178,10 +176,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         })
         .collect();
     // textures of the object parts this map uses
-    let mut part_textures: HashMap<(usize, usize), Vec<SpriteTexture>> = HashMap::new();
+    let mut part_textures: HashMap<(usize, usize, usize), Vec<SpriteTexture>> = HashMap::new();
     for o in objects.flat.iter().chain(&objects.shadows).chain(&objects.upright) {
-        part_textures.entry((o.set, o.frame)).or_insert_with(|| {
-            let parts = &assets.object_sets[o.set].frames[o.frame];
+        part_textures.entry((o.set, o.frame, o.state)).or_insert_with(|| {
+            let parts = assets.object_sets[o.set].frames[o.frame].parts(o.state);
             parts.iter().map(|p| upload_sprite(&mut rl, &thread, &p.image)).collect()
         });
     }
@@ -259,7 +257,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
             }
-            let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame)][p.part];
+            let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
             for p in objects.flat.iter().chain(&objects.shadows) {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }

@@ -16,6 +16,7 @@
 //! second the deck.
 
 use crate::palette::Palette;
+use crate::reader::Reader;
 use crate::sprite::{self, Image, KIND_SHADOW};
 use crate::{Error, Result};
 
@@ -46,42 +47,61 @@ pub const FOOTPRINT_SIZE: usize = 14;
 pub const FOOTPRINT_ORIGIN: i32 = 6;
 pub type Footprint = [[u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
 
-/// Footprint cells that block: bit 0x01. The original game tests exactly this bit when it writes a
-/// house into the map's passability (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`); the
-/// other bits (0x02, 0x04, 0x40) are not used there.
+/// Footprint cells that block: bit 0x01. The original game tests exactly this bit in the routines that
+/// update the map's passability for a house (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`);
+/// the other bits (0x02, 0x04, 0x40) are not used there. The editor has already stored these tiles as
+/// blocked in the map (see [`crate::map::Map::blocked`]).
 pub const FOOTPRINT_SOLID: u8 = 0x01;
 
 /// Side of a bridge grid (`most`), in tiles of 16 map pixels.
 pub const BRIDGE_SIZE: usize = 22;
-/// Bridge grid tile under the object position. Fitted on the 723 bridges of the summer single-player
-/// maps: it puts the most deck tiles over water (44 %, the rest are the ramps) while keeping the
-/// abutments (0x08, 0x09) on land (82 %); (4, 3) scores the same.
-pub const BRIDGE_ORIGIN: (i32, i32) = (4, 4);
-/// Bridge grid values with these bits set are the deck: 0xff, 0x7f, 0x3f, 0xfc, 0xfe (inferred).
-pub const BRIDGE_DECK: u8 = 0x30;
+/// Bridge grid value bit: the tile belongs to the bridge.
+pub const BRIDGE_PART: u8 = 0x01;
+/// Bridge grid value bit for state `s` (0 = intact): `BRIDGE_OPEN << s` set means the tile is open
+/// to vehicles in that state, clear means blocked.
+pub const BRIDGE_OPEN: u8 = 0x10;
 
-/// The intact state of every frame of a set; an empty list for empty or undecodable frames.
+/// The 16 px tile of a bridge grid tile, as the original computes it (`Game_Dll.dll` `0x10051708`):
+/// cell `(x >> 5) + (gx >> 1) - 5`, quarter `gx & 1` (same for y).
+pub fn bridge_tile(x: i16, y: i16, gx: i32, gy: i32) -> (i32, i32) {
+    let cell = |p: i16, g: i32| ((p as i32) >> 5) + (g >> 1) - 5;
+    (2 * cell(x, gx) + (gx & 1), 2 * cell(y, gy) + (gy & 1))
+}
+
+/// The parts of one object frame in each state it has; state 0 is intact. Objects store their state
+/// in the map (`Object::extra[0]`). Only bridges have their other states decoded so far.
+#[derive(Debug, Clone, Default)]
+pub struct ObjectFrame {
+    pub states: Vec<Vec<Part>>,
+}
+
+impl ObjectFrame {
+    /// Parts of `state`, falling back to the intact state when that state is not decoded.
+    pub fn parts(&self, state: usize) -> &[Part] {
+        self.states.get(state).or(self.states.first()).map_or(&[], Vec::as_slice)
+    }
+
+    /// The state actually drawn for a requested one.
+    pub fn resolve(&self, state: usize) -> usize {
+        if state < self.states.len() { state } else { 0 }
+    }
+}
+
+/// Every frame of a set; empty frames have no states.
 #[derive(Debug, Clone, Default)]
 pub struct ObjectSet {
-    pub frames: Vec<Vec<Part>>,
+    pub frames: Vec<ObjectFrame>,
     /// Building footprints (`dom` only), per frame.
     pub footprints: Vec<Option<Footprint>>,
-    /// Deck tiles of bridges (`most` only), per frame, as (x, y) in the bridge grid.
-    pub decks: Vec<Option<Vec<(i32, i32)>>>,
+    /// Bridge grids (`most` only), per frame, row by row.
+    pub bridges: Vec<Option<Vec<u8>>>,
 }
 
 /// A bridge frame: 512-byte palette, two u16, then the 22x22 grid ending at byte 1000, where a table
-/// of sprite offsets (relative to byte 1000) starts. Starting the grid at 516 is the only offset that
-/// leaves no deck tile in the last column, which would otherwise wrap onto the next row.
-fn bridge_deck(frame: &[u8]) -> Option<Vec<(i32, i32)>> {
-    let raw = frame.get(516..516 + BRIDGE_SIZE * BRIDGE_SIZE)?;
-    Some(
-        raw.iter()
-            .enumerate()
-            .filter(|&(_, &v)| v & BRIDGE_DECK != 0)
-            .map(|(i, _)| ((i % BRIDGE_SIZE) as i32, (i / BRIDGE_SIZE) as i32))
-            .collect(),
-    )
+/// of sprite offsets (relative to byte 1000) starts. With the grid at 516, 98.9 % of the bridge tiles
+/// of 60 maps match the passability the editor stored (76 % at 518).
+fn bridge_grid(frame: &[u8]) -> Option<Vec<u8>> {
+    frame.get(516..516 + BRIDGE_SIZE * BRIDGE_SIZE).map(<[u8]>::to_vec)
 }
 
 /// A house frame: 512-byte palette, u16, u32, then the 14x14 footprint grid
@@ -93,6 +113,31 @@ fn house_footprint(frame: &[u8]) -> Option<Footprint> {
         *row = *chunk;
     }
     Some(grid)
+}
+
+/// Bridge states: after the grid, at byte 1000, a table of 11 u32 offsets relative to byte 1000:
+/// abutments, their shadow, then the deck and its shadow for states 0 to 3, then the end of the frame.
+/// Four states match the four state bits of the grid (`BRIDGE_OPEN << state`).
+fn bridge_states(frame: &[u8], palette: &Palette) -> Option<Vec<Vec<Part>>> {
+    let table = Reader::at(frame, 1000).ok()?.u32_vec(11).ok()?;
+    let at = |i: usize| table[i] as usize + 1000;
+    // every entry is a sprite that parses exactly, or an empty 0x0 one (no shadow for that state,
+    // bridge frames 24 and 26); anything else means the frame is not a 4-state bridge
+    let decode = |i: usize, layer: Layer| -> Option<Option<Part>> {
+        let header = Reader::at(frame, at(i)).ok().and_then(|mut r| Some((r.i16().ok()?, r.i16().ok()?, r.u16().ok()?, r.u16().ok()?)));
+        if let Some((_, _, 0, _) | (_, _, _, 0)) = header {
+            return Some(None);
+        }
+        sprite::frame_len(frame, at(i))?;
+        Some(Some(Part { layer, image: sprite::decode(&frame[at(i)..], palette).ok()? }))
+    };
+    let abutments = [decode(0, Layer::Flat)?, decode(1, Layer::Shadow)?];
+    (0..4)
+        .map(|s| {
+            let deck = [decode(2 + 2 * s, Layer::Flat)?, decode(3 + 2 * s, Layer::Shadow)?];
+            Some(abutments.iter().chain(&deck).flatten().cloned().collect())
+        })
+        .collect()
 }
 
 /// Archive file name (without extension) of a set name used in maps.
@@ -160,9 +205,9 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
         .iter()
         .map(|f| if name.eq_ignore_ascii_case("dom") && !f.is_empty() { house_footprint(f) } else { None })
         .collect();
-    let decks = raw_frames
+    let bridges = raw_frames
         .iter()
-        .map(|f| if name.eq_ignore_ascii_case("most") && !f.is_empty() { bridge_deck(f) } else { None })
+        .map(|f| if name.eq_ignore_ascii_case("most") && !f.is_empty() { bridge_grid(f) } else { None })
         .collect();
     let frames = raw_frames
         .into_iter()
@@ -170,7 +215,7 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
             let (pal, start) = if own_palette {
                 match Palette::parse(frame) {
                     Ok(p) => (p, 512),
-                    Err(_) => return Vec::new(),
+                    Err(_) => return ObjectFrame::default(),
                 }
             } else {
                 let select = match palettes.len() {
@@ -179,9 +224,14 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
                 };
                 (palettes.get(select).unwrap_or(&palettes[0]).clone(), 0)
             };
+            if name.eq_ignore_ascii_case("most")
+                && let Some(states) = bridge_states(frame, &pal)
+            {
+                return ObjectFrame { states };
+            }
             let sprites: Vec<(usize, Layer)> = match slot_table(name) {
                 Some(table) => slotted_sprites(frame, table),
-                // a bridge is its abutments then its deck, each with a shadow
+                // a bridge without a readable state table: abutments then deck, each with a shadow
                 None => intact_sprites(frame, start, if name.eq_ignore_ascii_case("most") { 2 } else { 1 })
                     .into_iter()
                     .map(|(at, kind)| {
@@ -195,11 +245,12 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
                     })
                     .collect(),
             };
-            sprites
+            let intact: Vec<Part> = sprites
                 .into_iter()
                 .filter_map(|(at, layer)| Some(Part { layer, image: sprite::decode(&frame[at..], &pal).ok()? }))
-                .collect()
+                .collect();
+            ObjectFrame { states: if intact.is_empty() { Vec::new() } else { vec![intact] } }
         })
         .collect();
-    Ok(ObjectSet { frames, footprints, decks })
+    Ok(ObjectSet { frames, footprints, bridges })
 }

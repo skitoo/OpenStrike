@@ -72,11 +72,11 @@ fn summer_object_sets_decode() {
         let rs2 = summer.read(&format!("{stem}.rs2")).unwrap().unwrap();
         let pals = summer.read(&format!("{name}.pl")).unwrap().map(|p| Palette::parse_many(&p).unwrap()).unwrap_or_default();
         let set = objects::load_set(name, &rs2, &pals).unwrap();
-        let decoded = set.frames.iter().filter(|f| !f.is_empty()).count();
+        let decoded = set.frames.iter().filter(|f| !f.states.is_empty()).count();
         assert!(decoded > 0, "{name}: nothing decoded");
         if name == "tree" {
             // standing tree then its shadow
-            let layers: Vec<Layer> = set.frames[0].iter().map(|p| p.layer).collect();
+            let layers: Vec<Layer> = set.frames[0].parts(0).iter().map(|p| p.layer).collect();
             assert_eq!(layers, vec![Layer::Upright, Layer::Shadow]);
         }
     }
@@ -117,4 +117,21 @@ fn counted_unit_sprites_decode() {
         let frames = sprite::pck_frames(&pck).unwrap();
         assert!(frames.iter().all(|f| f.is_empty() || sprite::frame_len(f, 0) == Some(f.len())), "{name}: frames do not parse");
     }
+}
+
+#[test]
+fn bridges_have_four_states() {
+    use openstrike_formats::objects::{self, Layer};
+    let Some(dir) = data_dir() else { return };
+    let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
+    let set = objects::load_set("most", &summer.read("most.rs2").unwrap().unwrap(), &[]).unwrap();
+    let bridge = &set.frames[32];
+    assert_eq!(bridge.states.len(), 4);
+    for state in &bridge.states {
+        let layers: Vec<Layer> = state.iter().map(|p| p.layer).collect();
+        assert_eq!(layers, vec![Layer::Flat, Layer::Shadow, Layer::Flat, Layer::Shadow]);
+    }
+    // every state shares the abutments but has its own deck
+    assert_eq!(bridge.states[0][0].image, bridge.states[3][0].image);
+    assert_ne!(bridge.states[0][2].image, bridge.states[3][2].image);
 }

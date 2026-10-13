@@ -11,6 +11,8 @@ pub struct ObjectPart {
     pub screen: (i32, i32),
     pub set: usize,
     pub frame: usize,
+    /// State drawn (the map's state when decoded, else 0).
+    pub state: usize,
     pub part: usize,
 }
 
@@ -26,10 +28,11 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
     let mut out = Objects::default();
     for o in &map.objects {
         let (set, frame) = (o.set as usize, o.frame as usize);
-        let Some(parts) = sets.get(set).and_then(|s| s.frames.get(frame)) else { continue };
+        let Some(object) = sets.get(set).and_then(|s| s.frames.get(frame)) else { continue };
+        let state = object.resolve(o.extra[0] as usize);
         let screen = proj.to_screen(o.x as i32, o.y as i32);
-        for (part, p) in parts.iter().enumerate() {
-            let item = ObjectPart { screen, set, frame, part };
+        for (part, p) in object.parts(state).iter().enumerate() {
+            let item = ObjectPart { screen, set, frame, state, part };
             match p.layer {
                 Layer::Flat => out.flat.push(item),
                 Layer::Shadow => out.shadows.push(item),

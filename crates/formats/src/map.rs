@@ -41,7 +41,8 @@ pub struct Map {
     pub preview: Vec<u16>,
     /// Per cell: `palette_select << 11 | rhomb_index`.
     pub ground: Vec<u16>,
-    /// Per cell. Bits 8-11: ground type (see [`GROUND_TYPES`]); low byte 0xff on water; rest unknown.
+    /// Per cell. Bits 0-3: blocked quarters (see [`Map::blocked`]); bits 8-11: ground type
+    /// (see [`GROUND_TYPES`]); the rest is unknown.
     pub layer2: Vec<u32>,
     pub object_sets: Vec<String>,
     pub objects: Vec<Object>,
@@ -51,6 +52,17 @@ impl Map {
     pub fn rhomb(&self, x: u32, y: u32) -> (u16, u8) {
         let v = self.ground[(y * self.width + x) as usize];
         (v & 0x7ff, (v >> 11) as u8)
+    }
+
+    /// Whether a 16 px tile (a quarter of a cell) is blocked to vehicles. The map stores the game's
+    /// own passability: the low 4 bits of each cell, bit `(tx & 1) + 2 * (ty & 1)`, 1 = blocked.
+    /// Water, houses and intact bridges are already baked in by the editor. The game updates these
+    /// bits when a bridge changes state (`Game_Dll.dll` `0x100516e7`) or a house is destroyed
+    /// (`0x10054cda`); checked against the data: every solid house tile is set, and 98.9 % of the
+    /// bridge tiles of 60 maps match the bridge rule.
+    pub fn blocked(&self, tx: u32, ty: u32) -> bool {
+        let (cx, cy) = (tx / 2, ty / 2);
+        cx < self.width && cy < self.height && (self.layer2[(cy * self.width + cx) as usize] >> ((tx & 1) + 2 * (ty & 1))) & 1 != 0
     }
 
     /// Ground type index of a cell (see [`GROUND_TYPES`]).

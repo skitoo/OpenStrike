@@ -150,11 +150,24 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
   they only join into a track under this projection. The map is a diamond on screen.
 - Code: `crates/formats/src/iso.rs`, `crates/formats/src/rhomb.rs`.
 
-### Second layer and ground types
+### Second layer: passability and ground types
 
-`layer2` (u32 per cell): bits 8-11 are the ground type, in the order of `desc_common/GROUNDTYPES`:
-grass, lightgrass, pashnya (ploughed), swamp, darkground, lightground, **water** (6), sand.
-The low byte is 0xff on water and 0x00 on land; bit 15 and bits 16+ are not understood yet.
+`layer2` (u32 per cell):
+
+- **Bits 0-3: the game's passability**, one bit per 16 px quarter of the cell, bit `(tx & 1) + 2 * (ty & 1)`,
+  1 = blocked. The editor stores it with water, houses and intact bridges already applied: all water cells are 0xF,
+  every solid house tile is set, and 98.9 % of the bridge tiles of 60 maps match the bridge rule below.
+  The game rewrites these bits when a bridge changes state (`Game_Dll.dll` `0x100516e7`) or a house is destroyed
+  (`0x10054cda`, `0x10054f02`, `0x10055694`). OpenStrike reads them as its terrain.
+- Bits 8-11: the ground type, in the order of `desc_common/GROUNDTYPES`: grass, lightgrass, pashnya (ploughed), swamp,
+  darkground, lightground, **water** (6), sand.
+- Bit 15 and bits 16+: not understood yet.
+
+### Object states
+
+`Object::extra[0]` is the object's state in the map (0 = intact). Seen on all single-player maps: houses 0-3
+(1,649 damaged), trees 0-1 (3,092 down), `stand` 0-1, `lay` 0-1, bridges 0-3; fences use both bytes differently
+(unknown). Only bridge states are drawn so far; other objects are drawn intact whatever their state.
 
 ### Water
 
@@ -178,7 +191,7 @@ by a run of sprites in the `.pck` frame format:
 | `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ..., the 6-slot table at byte 205 | per slot |
 | `cliff` | 8 bytes | one sprite |
 | `dom` (houses) | own 512-byte palette, u16, u32, 14x14 footprint grid | per state: halves, ground, shadow |
-| `most` (bridges, piers) | own 512-byte palette, two u16, 22x22 grid, sprite offset table | abutments, shadow, deck, shadow, damaged decks |
+| `most` (bridges, piers) | own 512-byte palette, two u16, 22x22 grid, state table at 1000 | abutments + shadow, then deck + shadow per state |
 
 The **6-slot table** (u32 offsets in the frame, 0 = none) is: colour intact, colour destroyed, shadow intact,
 shadow destroyed, ground intact, ground destroyed. A tree's "ground destroyed" is the fallen tree; a sunken barge is
@@ -190,12 +203,14 @@ Tiles with **bit 0x01** block: the original writes houses into the map passabili
 `0x10054f02` and `0x10055694`, which loop over the 14x14 grid, test `grid & 0x01`, and compute the tile as
 `(x >> 4) + gx - 6`: grid tile (6, 6) is under the object position, at 16 px resolution.
 
-**Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000,
-then a table of sprite offsets relative to byte 1000. Starting the grid at 516 is the only offset that leaves no deck
-tile in the last column (otherwise rows wrap). Deck tiles have bits 0x30 set (0xff, 0x7f, 0x3f, 0xfc, 0xfe); 0x0b / 0x0f
-look like railings and 0x08 / 0x09 like abutments. Grid tile (4, 4) is under the object position, fitted on the 723
-summer bridges (deck over water 44 %, abutments on land 82 %). The sprites are the abutments + shadow, then the deck +
-shadow, then damaged decks: the intact bridge is the first two pairs. Some `most` objects are piers rather than bridges.
+**Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000
+(98.9 % agreement with the stored passability, against 76 % at byte 518). The original
+(`Game_Dll.dll` `0x100516e7`) places grid tile (gx, gy) in map cell `(x >> 5) + (gx >> 1) - 5`, quarter `gx & 1`
+(same for y). A tile with bit 0x01 belongs to the bridge; it is open in state `s` when bit `0x10 << s` is set, blocked
+otherwise (railings 0x0b / 0x0f, abutments 0x09; 0xff, 0x7f, 0x3f, 0xfc, 0xfe are deck tiles open in some states).
+At byte 1000 a table of 11 u32 offsets (relative to 1000) gives the abutments, their shadow, the deck and its shadow
+for each of the 4 states, then the end of the frame; a 0x0 sprite means no part (frames 24 and 26 have no state-1
+shadow). Some `most` objects are piers or viaduct spans rather than river bridges.
 
 Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
 Sets without a table: the engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and
