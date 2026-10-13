@@ -158,7 +158,8 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
   1 = blocked. The editor stores it with water, houses and intact bridges already applied: all water cells are 0xF,
   every solid house tile is set, and 98.9 % of the bridge tiles of 60 maps match the bridge rule below.
   The game rewrites these bits when a bridge changes state (`Game_Dll.dll` `0x100516e7`) or a house is destroyed
-  (`0x10054cda`, `0x10054f02`, `0x10055694`). OpenStrike reads them as its terrain.
+  (`0x10054cda`, `0x10054f02`, `0x10055694`). No house code writes them at run time (every writer is listed in
+  `docs/original-code.md`): the stored bits are the houses' passability. OpenStrike reads them as its terrain.
 - Bits 8-11: the ground type, in the order of `desc_common/GROUNDTYPES`: grass, lightgrass, pashnya (ploughed), swamp,
   darkground, lightground, **water** (6), sand.
 - Bit 15 and bits 16+: not understood yet.

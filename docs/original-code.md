@@ -75,6 +75,17 @@ only.
 | `[0x100c54d4]`, `[0x100c54d8]` | map width, height in cells |
 | `0x1004c980` | map loader: copies the cells, bits 24-29 and 19-23 from two sections, border `\| 0x4000000f` |
 
+Every instruction that writes the cell flags (`grep 0x101054e6`, 199 references, checked on
+2026-10-13): the loader (`0x1004cee2`); the path wrappers' temporary clear of the unit's own cell
+(`0x10061f7f`, `0x10063b1f`, `0x100657b8`); mines (`0x1004d740`, bit 19); bridge states
+(`0x100514b8`, `0x100514de`, `0x1005178b`, `0x10051e69`); `stand` destruction clearing its 14 x 14
+footprint (`0x10054c60`, also `0x10054e98`, `0x10055640`); trees planted at run time blocking the
+quarter of their trunk (`0x10055410`) and freeing it when knocked down by a type with flag
+`+0x24 & 8` (`0x10055c1b`); a class (vtable around `0x100abc8c`) blocking or freeing whole cells
+with bit 31 (`0x100544b6`, `0x100548bd`); a class (vtable around `0x100abe90`) clearing bit 14
+(`0x10057892`); houses clearing bit 11 on 7 x 7 cells around them (`0x100505f7`). **No house code
+writes the quarters**: a house's passability is the one stored in the map.
+
 ## Units (tank vtable `0x100a83f0`)
 
 Fields (offsets from the unit):
