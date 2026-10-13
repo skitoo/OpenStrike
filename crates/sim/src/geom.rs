@@ -47,24 +47,28 @@ pub fn isqrt(n: i64) -> i64 {
     x
 }
 
-/// One of 16 headings, clockwise from east (screen coordinates, y down).
+/// One of the game's 32 headings, clockwise from east in 11.25 degree steps (screen coordinates, y down).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default)]
 pub struct Direction(pub u8);
 
-/// Unit vectors of the 16 headings, scaled by 1024.
-const HEADINGS: [(i64, i64); 16] = [
-    (1024, 0), (946, 392), (724, 724), (392, 946),
-    (0, 1024), (-392, 946), (-724, 724), (-946, 392),
-    (-1024, 0), (-946, -392), (-724, -724), (-392, -946),
-    (0, -1024), (392, -946), (724, -724), (946, -392),
+/// Unit vectors of the 32 headings, scaled by 1024.
+const HEADINGS: [(i64, i64); 32] = [
+    (1024, 0), (1004, 200), (946, 392), (851, 569),
+    (724, 724), (569, 851), (392, 946), (200, 1004),
+    (0, 1024), (-200, 1004), (-392, 946), (-569, 851),
+    (-724, 724), (-851, 569), (-946, 392), (-1004, 200),
+    (-1024, 0), (-1004, -200), (-946, -392), (-851, -569),
+    (-724, -724), (-569, -851), (-392, -946), (-200, -1004),
+    (0, -1024), (200, -1004), (392, -946), (569, -851),
+    (724, -724), (851, -569), (946, -392), (1004, -200),
 ];
 
 impl Direction {
-    pub const COUNT: u8 = 16;
+    pub const COUNT: u8 = 32;
 
     /// Closest heading to `v` (integer dot product, no trigonometry).
     pub fn towards(v: Vec2) -> Self {
-        let best = (0..16)
+        let best = (0..HEADINGS.len())
             .max_by_key(|&i| HEADINGS[i].0 * v.x as i64 + HEADINGS[i].1 * v.y as i64)
             .unwrap_or(0);
         Self(best as u8)

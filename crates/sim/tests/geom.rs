@@ -11,8 +11,9 @@ fn isqrt_is_exact() {
 #[test]
 fn headings_point_where_expected() {
     assert_eq!(Direction::towards(Vec2::new(10, 0)), Direction(0));
-    assert_eq!(Direction::towards(Vec2::new(0, 10)), Direction(4));
-    assert_eq!(Direction::towards(Vec2::new(-10, 0)), Direction(8));
-    assert_eq!(Direction::towards(Vec2::new(0, -10)), Direction(12));
-    assert_eq!(Direction::towards(Vec2::new(10, 10)), Direction(2));
+    assert_eq!(Direction::towards(Vec2::new(0, 10)), Direction(8));
+    assert_eq!(Direction::towards(Vec2::new(-10, 0)), Direction(16));
+    assert_eq!(Direction::towards(Vec2::new(0, -10)), Direction(24));
+    assert_eq!(Direction::towards(Vec2::new(10, 10)), Direction(4));
+    assert_eq!(Direction::towards(Vec2::new(1000, 200)), Direction(1));
 }

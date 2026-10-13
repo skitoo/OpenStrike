@@ -41,7 +41,7 @@ fn units_reach_their_target_and_stop() {
 #[test]
 fn moving_units_face_their_target() {
     let w = step(&world(), &[Command::Move { unit: UnitId(1), to: Vec2::new(0, 100 * SUBPIXEL) }]);
-    assert_eq!(w.units[0].facing, Direction(4));
+    assert_eq!(w.units[0].facing, Direction(8));
 }
 
 #[test]
