@@ -8,7 +8,7 @@ OpenStrike ships no game data. You need your own copy of *Sudden Strike Gold* (S
 ## Status
 
 Early engine: a map is drawn in the game's isometric view with its ground, roads, rails, trees, fences and
-buildings, and a tank drives where you right-click (no collisions yet).
+buildings, and a tank drives where you right-click, around water and buildings.
 File formats are being reverse engineered; see `docs/formats.md`.
 
 ## Architecture
@@ -33,7 +33,8 @@ cargo run --release -p openstrike -- path/to/map.ssm --climate winter
 cargo test --workspace --release                        # data tests are skipped without the game
 ```
 
-Controls: right click to move, arrows / WASD or middle drag to scroll, wheel to zoom.
+Controls: right click to move, arrows / WASD or middle drag to scroll, wheel to zoom, B to show blocked tiles.
+Debug options: `--look-at x,y`, `--zoom z`, `--show-blocked`, `--screenshot file.png`.
 
 ## Layout
 

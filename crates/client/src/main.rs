@@ -4,13 +4,15 @@
 mod assets;
 mod camera;
 mod scene;
+mod terrain;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
-use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, Vec2, World, step};
+use openstrike_sim::terrain::TILE;
+use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Terrain, Unit, UnitId, Vec2, World, path, step};
 use raylib::prelude::*;
 
 use crate::assets::Assets;
@@ -30,6 +32,7 @@ struct Options {
     /// Map pixel to centre the camera on at start (defaults to the tank).
     look_at: Option<(i32, i32)>,
     zoom: f32,
+    show_blocked: bool,
 }
 
 fn options() -> Options {
@@ -41,12 +44,14 @@ fn options() -> Options {
         screenshot: None,
         look_at: None,
         zoom: 1.0,
+        show_blocked: false,
     };
     while let Some(a) = args.next() {
         match a.as_str() {
             "--data" => o.data = args.next().map(PathBuf::from).unwrap_or(o.data),
             "--climate" => o.climate = args.next().unwrap_or(o.climate),
             "--screenshot" => o.screenshot = args.next().map(PathBuf::from),
+            "--show-blocked" => o.show_blocked = true,
             "--zoom" => o.zoom = args.next().and_then(|v| v.parse().ok()).unwrap_or(o.zoom),
             "--look-at" => {
                 o.look_at = args.next().and_then(|v| {
@@ -136,12 +141,15 @@ fn read_input(rl: &RaylibHandle) -> CameraInput {
     CameraInput { scroll, drag, zoom_steps: rl.get_mouse_wheel_move(), zoom_anchor: (m.x, m.y) }
 }
 
-fn initial_world(assets: &Assets) -> World {
+/// The tank starts on the free tile closest to the middle of the map.
+fn initial_world(assets: &Assets, terrain: &Terrain) -> World {
     let (w, h) = assets.map.pixel_size();
+    let middle = Terrain::tile_of(Vec2::new(w as i32 / 2 * SUBPIXEL, h as i32 / 2 * SUBPIXEL));
+    let start = path::nearest_passable(terrain, middle).unwrap_or(middle);
     let tank = Unit {
         id: TANK,
         kind: "t-26".into(),
-        pos: Vec2::new(w as i32 / 2 * SUBPIXEL, h as i32 / 2 * SUBPIXEL),
+        pos: Terrain::centre(start.0, start.1),
         facing: Direction(0),
         speed: 3 * SUBPIXEL,
         order: Order::Idle,
@@ -155,6 +163,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let proj = assets.projection;
     let (screen_w, screen_h) = proj.screen_size();
     let objects = scene::objects(&assets.map, &proj, &assets.object_sets);
+    let terrain = terrain::build(&assets.map, &assets.object_sets);
+    let mut show_blocked = opts.show_blocked;
 
     let (mut rl, thread) = raylib::init().size(1280, 800).title("OpenStrike").resizable().build();
     rl.set_target_fps(60);
@@ -176,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
 
-    let mut world = initial_world(&assets);
+    let mut world = initial_world(&assets, &terrain);
     let tank_start = world.unit(TANK).map(|u| u.pos).unwrap_or_default();
     let (lx, ly) = opts.look_at.unwrap_or((tank_start.x / SUBPIXEL, tank_start.y / SUBPIXEL));
     let (tx, ty) = proj.to_screen(lx, ly);
@@ -199,9 +209,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             let (x, y) = proj.to_map(sx, sy);
             pending.push(Command::Move { unit: TANK, to: Vec2::new(x as i32 * SUBPIXEL, y as i32 * SUBPIXEL) });
         }
+        if rl.is_key_pressed(KeyboardKey::KEY_B) {
+            show_blocked = !show_blocked;
+        }
         accumulator += if opts.screenshot.is_some() { tick } else { dt };
         while accumulator >= tick {
-            world = step(&world, &pending);
+            world = step(&world, &terrain, &pending);
             pending.clear();
             accumulator -= tick;
         }
@@ -253,8 +266,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             for u in units_left {
                 draw_unit(&mut m, &tank, u, view);
             }
+            if show_blocked {
+                draw_blocked(&mut m, &terrain, &proj, view);
+            }
         }
-        d.draw_text("Right click: move   Arrows/WASD or middle drag: scroll   Wheel: zoom", 10, 10, 20, Color::RAYWHITE);
+        d.draw_text("Right click: move   Arrows/WASD or middle drag: scroll   Wheel: zoom   B: blocked tiles", 10, 10, 20, Color::RAYWHITE);
         d.draw_fps(10, 36);
         drop(d);
 
@@ -267,4 +283,27 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     }
     Ok(())
+}
+
+/// Debug overlay: blocked terrain tiles as red rhombs.
+fn draw_blocked<D: RaylibDraw>(d: &mut D, terrain: &Terrain, proj: &openstrike_formats::iso::Projection, view: Rect) {
+    let colour = Color::new(255, 0, 0, 90);
+    for ty in 0..terrain.height {
+        for tx in 0..terrain.width {
+            if terrain.passable(tx, ty) {
+                continue;
+            }
+            let corner = |x: i32, y: i32| {
+                let (sx, sy) = proj.to_screen(x * TILE, y * TILE);
+                Vector2::new(sx as f32, sy as f32)
+            };
+            let (top, right, bottom, left) = (corner(tx, ty), corner(tx + 1, ty), corner(tx + 1, ty + 1), corner(tx, ty + 1));
+            if !overlaps(view, left.x as i32, top.y as i32, (right.x - left.x) as i32, (bottom.y - top.y) as i32) {
+                continue;
+            }
+            // raylib wants counter-clockwise triangles
+            d.draw_triangle(top, left, right, colour);
+            d.draw_triangle(right, left, bottom, colour);
+        }
+    }
 }
