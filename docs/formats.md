@@ -169,6 +169,18 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
 (1,649 damaged), trees 0-1 (3,092 down), `stand` 0-1, `lay` 0-1, bridges 0-3; fences use both bytes differently
 (unknown). Only bridge states are drawn so far; other objects are drawn intact whatever their state.
 
+Rules read in `Game_Dll.dll` (not implemented yet):
+- `stand` (record builder `0x10054b61`): `extra[0] != 0` gives state 1; the draw routine (`0x100551a0`) uses slot
+  `state` for the colour sprite (layer 7), `2 + state` for the shadow (layer 6), `4 + state` for the ground sprite.
+  `stand` frames also carry a 14x14 footprint grid at byte 9 (before the slot table at 205); the routines
+  `0x10054cda`, `0x10054f02`, `0x10055694` that test bit 0x01 with origin 6 belong to this class, not to houses.
+- Trees (builder `0x100560e5`, draw `0x10055e01`): state = `extra[0] & 1`, same slot rule from byte 5.
+- Houses: each placed house becomes an instance (`0x100500c0`, called from `0x10050dae`) with type = object frame and
+  state = `extra[0]` (0-3); the draw routine (`0x100511d0`) takes per state four sprites (left half, right half,
+  ground, shadow). At run time the state follows the hit points (`0x10050890`: thresholds from the HP values of
+  `land/dom`, one per state). The house footprint rule (bit 0x01, origin 6) is confirmed by the data (all 4,245
+  solid tiles are blocked in the map) but its routine has not been read yet.
+
 ### Water
 
 Water cells use rhombs whose pixels sit in palette indices 146-156, which are dark green in every `rhomb.pl`
@@ -199,9 +211,9 @@ an empty colour sprite, a shadow and a ground sprite. The intact state is slots 
 
 **House footprints** (`dom`): after the 512-byte palette come a u16, a u32, then a **14x14 grid** (read by the loader
 at `Game_Dll.dll` `0x10050980`, which then reads 8 more bytes and single bytes). Each grid tile is 16x16 map pixels.
-Tiles with **bit 0x01** block: the original writes houses into the map passability in `Game_Dll.dll` `0x10054cda`,
-`0x10054f02` and `0x10055694`, which loop over the 14x14 grid, test `grid & 0x01`, and compute the tile as
-`(x >> 4) + gx - 6`: grid tile (6, 6) is under the object position, at 16 px resolution.
+Tiles with **bit 0x01** block, grid tile (6, 6) under the object position, 16 px tiles: the same rule as the `stand`
+footprint routines (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`), and every solid house tile is blocked in
+the stored map passability. The house routine itself has not been read yet.
 
 **Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000
 (98.9 % agreement with the stored passability, against 76 % at byte 518). The original

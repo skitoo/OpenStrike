@@ -42,15 +42,16 @@ pub struct Part {
 
 /// Side of a building footprint grid, in tiles of 16 map pixels.
 pub const FOOTPRINT_SIZE: usize = 14;
-/// Grid cell under the object position: the original computes the tile as `(x >> 4) + gx - 6`
-/// (same routines as [`FOOTPRINT_SOLID`]), which the data also suggested (75 of the 113 summer houses).
+/// Grid cell under the object position: the `stand` routines compute the tile as `(x >> 4) + gx - 6`
+/// (see [`FOOTPRINT_SOLID`]); for houses the data agrees (75 of the 113 summer houses, and the stored
+/// passability).
 pub const FOOTPRINT_ORIGIN: i32 = 6;
 pub type Footprint = [[u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
 
-/// Footprint cells that block: bit 0x01. The original game tests exactly this bit in the routines that
-/// update the map's passability for a house (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`);
-/// the other bits (0x02, 0x04, 0x40) are not used there. The editor has already stored these tiles as
-/// blocked in the map (see [`crate::map::Map::blocked`]).
+/// Footprint cells that block: bit 0x01, as in the `stand` footprint routines of the original
+/// (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`); for houses, every such tile is blocked in
+/// the passability the editor stored (see [`crate::map::Map::blocked`]), but the house routine itself
+/// has not been read yet.
 pub const FOOTPRINT_SOLID: u8 = 0x01;
 
 /// Side of a bridge grid (`most`), in tiles of 16 map pixels.
