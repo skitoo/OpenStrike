@@ -176,7 +176,8 @@ by a run of sprites in the `.pck` frame format:
 | `tree` | 5 bytes, then the 6-slot table (loader `0x10055890`) | standing, shadow, fallen |
 | `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ..., the 6-slot table at byte 205 | per slot |
 | `cliff` | 8 bytes | one sprite |
-| `dom` (houses), `most` (bridges) | own 512-byte palette, then an occupancy grid (?) | per state: halves, ground, shadow |
+| `dom` (houses) | own 512-byte palette, u16, u32, 14x14 footprint grid | per state: halves, ground, shadow |
+| `most` (bridges, piers) | own 512-byte palette, two u16, 22x22 grid, sprite offset table | abutments, shadow, deck, shadow, damaged decks |
 
 The **6-slot table** (u32 offsets in the frame, 0 = none) is: colour intact, colour destroyed, shadow intact,
 shadow destroyed, ground intact, ground destroyed. A tree's "ground destroyed" is the fallen tree; a sunken barge is
@@ -186,6 +187,13 @@ an empty colour sprite, a shadow and a ground sprite. The intact state is slots 
 at `Game_Dll.dll` `0x10050980`, which then reads 8 more bytes and single bytes). Each grid tile is 16x16 map pixels.
 Values 0x40 / 0x04 form the solid building, 0x01-0x03 ring it (inferred). Grid tile (6, 6) is under the object position:
 fitted by aligning the solid tiles with the house's ground sprite (best for 75 of the 113 summer houses).
+
+**Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000,
+then a table of sprite offsets relative to byte 1000. Starting the grid at 516 is the only offset that leaves no deck
+tile in the last column (otherwise rows wrap). Deck tiles have bits 0x30 set (0xff, 0x7f, 0x3f, 0xfc, 0xfe); 0x0b / 0x0f
+look like railings and 0x08 / 0x09 like abutments. Grid tile (4, 4) is under the object position, fitted on the 723
+summer bridges (deck over water 44 %, abutments on land 82 %). The sprites are the abutments + shadow, then the deck +
+shadow, then damaged decks: the intact bridge is the first two pairs. Some `most` objects are piers rather than bridges.
 
 Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
 Sets without a table: the engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and

@@ -12,7 +12,8 @@
 //! The other sets have no such table (`zabor`: u32 sprite length, loader `0x10056dc0`; `dom` and `most`:
 //! their own 512-byte palette first). Their sprites are located with [`sprite::frame_len`] and the
 //! intact state is every sprite up to and including the first shadow (the first sprite when there is
-//! no shadow).
+//! no shadow), or the second shadow for bridges, whose first sprite is only the abutments and the
+//! second the deck.
 
 use crate::palette::Palette;
 use crate::sprite::{self, Image, KIND_SHADOW};
@@ -49,12 +50,37 @@ pub type Footprint = [[u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
 /// Inferred from the data: these bits form the solid block, while 0x01-0x03 ring it.
 pub const FOOTPRINT_SOLID: u8 = 0x44;
 
+/// Side of a bridge grid (`most`), in tiles of 16 map pixels.
+pub const BRIDGE_SIZE: usize = 22;
+/// Bridge grid tile under the object position. Fitted on the 723 bridges of the summer single-player
+/// maps: it puts the most deck tiles over water (44 %, the rest are the ramps) while keeping the
+/// abutments (0x08, 0x09) on land (82 %); (4, 3) scores the same.
+pub const BRIDGE_ORIGIN: (i32, i32) = (4, 4);
+/// Bridge grid values with these bits set are the deck: 0xff, 0x7f, 0x3f, 0xfc, 0xfe (inferred).
+pub const BRIDGE_DECK: u8 = 0x30;
+
 /// The intact state of every frame of a set; an empty list for empty or undecodable frames.
 #[derive(Debug, Clone, Default)]
 pub struct ObjectSet {
     pub frames: Vec<Vec<Part>>,
     /// Building footprints (`dom` only), per frame.
     pub footprints: Vec<Option<Footprint>>,
+    /// Deck tiles of bridges (`most` only), per frame, as (x, y) in the bridge grid.
+    pub decks: Vec<Option<Vec<(i32, i32)>>>,
+}
+
+/// A bridge frame: 512-byte palette, two u16, then the 22x22 grid ending at byte 1000, where a table
+/// of sprite offsets (relative to byte 1000) starts. Starting the grid at 516 is the only offset that
+/// leaves no deck tile in the last column, which would otherwise wrap onto the next row.
+fn bridge_deck(frame: &[u8]) -> Option<Vec<(i32, i32)>> {
+    let raw = frame.get(516..516 + BRIDGE_SIZE * BRIDGE_SIZE)?;
+    Some(
+        raw.iter()
+            .enumerate()
+            .filter(|&(_, &v)| v & BRIDGE_DECK != 0)
+            .map(|(i, _)| ((i % BRIDGE_SIZE) as i32, (i / BRIDGE_SIZE) as i32))
+            .collect(),
+    )
 }
 
 /// A house frame: 512-byte palette, u16, u32, then the 14x14 footprint grid
@@ -93,8 +119,10 @@ fn slotted_sprites(frame: &[u8], table: usize) -> Vec<(usize, Layer)> {
         .collect()
 }
 
-fn intact_sprites(frame: &[u8], start: usize) -> Vec<(usize, u8)> {
+/// Sprites up to and including the `shadows`-th shadow (only the first sprite if there is none).
+fn intact_sprites(frame: &[u8], start: usize, shadows: usize) -> Vec<(usize, u8)> {
     let mut found = Vec::new();
+    let mut seen = 0;
     let mut at = start;
     while at + 9 <= frame.len() {
         match sprite::frame_len(frame, at) {
@@ -102,14 +130,19 @@ fn intact_sprites(frame: &[u8], start: usize) -> Vec<(usize, u8)> {
                 let kind = frame[at + 8];
                 found.push((at, kind));
                 if kind == KIND_SHADOW {
-                    return found;
+                    seen += 1;
+                    if seen == shadows {
+                        return found;
+                    }
                 }
                 at += len;
             }
             None => at += 1,
         }
     }
-    found.truncate(1);
+    if seen == 0 {
+        found.truncate(1);
+    }
     found
 }
 
@@ -125,6 +158,10 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
     let footprints = raw_frames
         .iter()
         .map(|f| if name.eq_ignore_ascii_case("dom") && !f.is_empty() { house_footprint(f) } else { None })
+        .collect();
+    let decks = raw_frames
+        .iter()
+        .map(|f| if name.eq_ignore_ascii_case("most") && !f.is_empty() { bridge_deck(f) } else { None })
         .collect();
     let frames = raw_frames
         .into_iter()
@@ -143,7 +180,8 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
             };
             let sprites: Vec<(usize, Layer)> = match slot_table(name) {
                 Some(table) => slotted_sprites(frame, table),
-                None => intact_sprites(frame, start)
+                // a bridge is its abutments then its deck, each with a shadow
+                None => intact_sprites(frame, start, if name.eq_ignore_ascii_case("most") { 2 } else { 1 })
                     .into_iter()
                     .map(|(at, kind)| {
                         let layer = match kind {
@@ -162,5 +200,5 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
                 .collect()
         })
         .collect();
-    Ok(ObjectSet { frames, footprints })
+    Ok(ObjectSet { frames, footprints, decks })
 }

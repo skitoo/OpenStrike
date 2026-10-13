@@ -29,6 +29,16 @@ impl Terrain {
         self
     }
 
+    pub fn with_unblocked(mut self, tiles: impl IntoIterator<Item = (i32, i32)>) -> Self {
+        for (x, y) in tiles {
+            if self.contains(x, y) {
+                let i = self.index(x, y);
+                self.blocked[i] = false;
+            }
+        }
+        self
+    }
+
     pub fn contains(&self, x: i32, y: i32) -> bool {
         x >= 0 && y >= 0 && x < self.width && y < self.height
     }
