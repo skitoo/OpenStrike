@@ -1,10 +1,6 @@
 //! OpenStrike: the imperative shell. It reads devices into plain values, feeds commands to the
 //! pure simulation at a fixed rate, and draws the result. No game logic lives here.
 
-mod assets;
-mod camera;
-mod scene;
-mod terrain;
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -15,9 +11,10 @@ use openstrike_sim::terrain::TILE;
 use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Terrain, Unit, UnitId, Vec2, World, path, step};
 use raylib::prelude::*;
 
-use crate::assets::Assets;
-use crate::camera::{Camera, CameraInput};
-use crate::scene::{ObjectPart, UnitView};
+use openstrike::assets::{self, Assets};
+use openstrike::camera::{self, Camera, CameraInput};
+use openstrike::scene::{self, ObjectPart, UnitView};
+use openstrike::terrain;
 
 const TANK: UnitId = UnitId(1);
 const SCREENSHOT_FRAMES: u32 = 200;
