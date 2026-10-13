@@ -17,7 +17,7 @@ fn data_dir() -> Option<PathBuf> {
 #[test]
 fn water_and_houses_are_blocked_in_the_stored_terrain() {
     let Some(dir) = data_dir() else { return };
-    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), "summer", &[]).unwrap();
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
     let t = terrain::build(&a.map);
     for cy in 0..a.map.height {
         for cx in 0..a.map.width {
@@ -44,7 +44,7 @@ fn water_and_houses_are_blocked_in_the_stored_terrain() {
 fn bridges_open_their_deck_as_the_original_rule_says() {
     // Game_Dll.dll 0x100516e7: a grid tile with bit 0x01 is open when BRIDGE_OPEN << state is set
     let Some(dir) = data_dir() else { return };
-    let a = assets::load(&dir, &dir.join("Maps/single/'Guard on the river Rhine'.ssm"), "summer", &[]).unwrap();
+    let a = assets::load(&dir, &dir.join("Maps/single/'Guard on the river Rhine'.ssm"), None, &[]).unwrap();
     let t = terrain::build(&a.map);
     let most = a.map.object_sets.iter().position(|n| n == "most").unwrap();
     let (mut agree, mut total) = (0, 0);
@@ -73,7 +73,7 @@ fn a_tank_crosses_the_rhine() {
     // finder: the river runs north-south through the middle, crossed by bridges around y = 30-56
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
-    let a = assets::load(&dir, &map_path, "summer", &["t-26"]).unwrap();
+    let a = assets::load(&dir, &map_path, None, &["t-26"]).unwrap();
     let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![a.vehicles[0].unit_type.clone()] };
     let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
     let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
@@ -98,7 +98,7 @@ fn the_platoon_loads() {
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Act of Sabotage'.ssm");
     let names = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman5"];
-    let a = assets::load(&dir, &map_path, "summer", &names).unwrap();
+    let a = assets::load(&dir, &map_path, None, &names).unwrap();
     let loaded: Vec<&str> = a.vehicles.iter().map(|v| v.name.as_str()).collect();
     assert_eq!(loaded, names);
     // speeds in 1/256 px per tick, from MoveSpeed (second value, scaled and truncated)

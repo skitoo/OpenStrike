@@ -62,24 +62,60 @@ fn every_single_player_map_parses() {
     assert_eq!(count, 164);
 }
 
+/// The archives of a climate, as `sudtest.ini` lists them (first listed wins).
+fn climate_vfs(dir: &std::path::Path, climate: &str) -> openstrike_formats::sue::Vfs {
+    let list: &[&str] = match climate {
+        "winter" => &["winter", "desc_winter"],
+        "beach" => &["beach", "summer", "desc_summer"],
+        "desert" => &["desert", "desc_desert"],
+        _ => &["summer", "desc_summer"],
+    };
+    let mut vfs = openstrike_formats::sue::Vfs::default();
+    for name in list.iter().rev() {
+        vfs.mount(Archive::parse(std::fs::read(dir.join(format!("{name}.sue"))).unwrap()).unwrap());
+    }
+    vfs
+}
+
 #[test]
-fn summer_object_sets_decode() {
-    use openstrike_formats::objects::{self, Layer};
+fn every_object_of_every_map_has_its_sprites() {
+    use openstrike_formats::objects;
+    use std::collections::HashMap;
     let Some(dir) = data_dir() else { return };
-    let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
-    for name in ["trop", "tree", "stand", "zabor", "dom", "lay", "fre", "cliff", "most"] {
-        let stem = objects::file_stem(name);
-        let rs2 = summer.read(&format!("{stem}.rs2")).unwrap().unwrap();
-        let pals = summer.read(&format!("{name}.pl")).unwrap().map(|p| Palette::parse_many(&p).unwrap()).unwrap_or_default();
-        let set = objects::load_set(name, &rs2, &pals).unwrap();
-        let decoded = set.frames.iter().filter(|f| !f.states.is_empty()).count();
-        assert!(decoded > 0, "{name}: nothing decoded");
-        if name == "tree" {
-            // standing tree then its shadow
-            let layers: Vec<Layer> = set.frames[0].parts(0).iter().map(|p| p.layer).collect();
-            assert_eq!(layers, vec![Layer::Upright, Layer::Shadow]);
+    let mut sets: HashMap<(String, String), objects::ObjectSet> = HashMap::new();
+    let mut vfs_by_climate = HashMap::new();
+    let (mut drawn, mut dropped) = (0, 0);
+    let mut missing: Vec<String> = Vec::new();
+    for e in std::fs::read_dir(dir.join("Maps/single")).unwrap() {
+        let path = e.unwrap().path();
+        let Ok(m) = map::parse(&std::fs::read(&path).unwrap()) else { continue };
+        let climate = m.climate();
+        let vfs = vfs_by_climate.entry(climate).or_insert_with(|| climate_vfs(&dir, climate));
+        for o in &m.objects {
+            let name = m.object_sets[o.set as usize].to_ascii_lowercase();
+            let set = sets.entry((climate.to_string(), name.clone())).or_insert_with(|| {
+                let Some(rs2) = vfs.read(&format!("{}.rs2", objects::file_stem(&name))).unwrap() else { return Default::default() };
+                let pals = vfs.read(&format!("{name}.pl")).unwrap().map(|p| Palette::parse_many(&p).unwrap()).unwrap_or_default();
+                objects::load_set(&name, &rs2, &pals).unwrap()
+            });
+            if objects::placement(&name, o.x, o.y, m.width, m.height).is_none() {
+                dropped += 1;
+                continue;
+            }
+            let frame = if name == "zabor" { objects::fence_frame(o.frame, o.extra) } else { o.frame } as usize;
+            let state = objects::map_state(&name, o.extra[0]);
+            match set.frames.get(frame) {
+                Some(f) if !f.parts(state).is_empty() => drawn += 1,
+                _ => {
+                    if missing.len() < 20 {
+                        missing.push(format!("{climate} {name} frame {frame} state {state} ({})", path.file_name().unwrap().to_string_lossy()));
+                    }
+                }
+            }
         }
     }
+    assert!(missing.is_empty(), "{drawn} drawn, {dropped} dropped by the game, missing: {missing:#?}");
+    assert!(drawn > 900_000, "{drawn} drawn");
 }
 
 #[test]
@@ -121,15 +157,15 @@ fn counted_unit_sprites_decode() {
 
 #[test]
 fn bridges_have_four_states() {
-    use openstrike_formats::objects::{self, Layer};
+    use openstrike_formats::objects::{self, LAYER_SHADOW};
     let Some(dir) = data_dir() else { return };
     let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
     let set = objects::load_set("most", &summer.read("most.rs2").unwrap().unwrap(), &[]).unwrap();
     let bridge = &set.frames[32];
     assert_eq!(bridge.states.len(), 4);
     for state in &bridge.states {
-        let layers: Vec<Layer> = state.iter().map(|p| p.layer).collect();
-        assert_eq!(layers, vec![Layer::Flat, Layer::Shadow, Layer::Flat, Layer::Shadow]);
+        let layers: Vec<u8> = state.iter().map(|p| p.layer).collect();
+        assert_eq!(layers, vec![0, LAYER_SHADOW, 0, LAYER_SHADOW]);
     }
     // every state shares the abutments but has its own deck
     assert_eq!(bridge.states[0][0].image, bridge.states[3][0].image);
@@ -138,15 +174,15 @@ fn bridges_have_four_states() {
 
 #[test]
 fn trees_stands_and_houses_have_their_states() {
-    use openstrike_formats::objects::{self, Layer, map_state};
+    use openstrike_formats::objects::{self, LAYER_UPRIGHT, map_state};
     let Some(dir) = data_dir() else { return };
     let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
     let pals = |n: &str| Palette::parse_many(&summer.read(&format!("{n}.pl")).unwrap().unwrap()).unwrap();
     let trees = objects::load_set("tree", &summer.read("tree.rs2").unwrap().unwrap(), &pals("tree")).unwrap();
     // a standing tree, and the same tree down: its shadow and the fallen trunk on the ground
     assert_eq!(trees.frames[0].states.len(), 2);
-    let down: Vec<Layer> = trees.frames[0].parts(1).iter().map(|p| p.layer).collect();
-    assert!(down.contains(&Layer::Flat) && !down.contains(&Layer::Upright), "{down:?}");
+    let down: Vec<u8> = trees.frames[0].parts(1).iter().map(|p| p.layer).collect();
+    assert!(down.contains(&3) && !down.contains(&LAYER_UPRIGHT), "{down:?}");
     let houses = objects::load_set("dom", &summer.read("houses.rs2").unwrap().unwrap(), &[]).unwrap();
     assert!(houses.frames.iter().filter(|f| !f.states.is_empty()).all(|f| f.states.len() == 4));
     assert_eq!(map_state("stand", 3), 1);
@@ -192,4 +228,22 @@ fn fence_frames_follow_their_extra_bytes() {
         }
     }
     assert_eq!(fences, 190_284);
+}
+
+#[test]
+fn every_house_reads_as_the_loader_does() {
+    let Some(dir) = data_dir() else { return };
+    let mut houses = 0;
+    for climate in ["summer", "winter", "desert"] {
+        let Ok(data) = std::fs::read(dir.join(format!("{climate}.sue"))) else { continue };
+        let archive = Archive::parse(data).unwrap();
+        let Some(rs2) = archive.read("houses.rs2").unwrap() else { continue };
+        let set = openstrike_formats::objects::load_set("dom", &rs2, &[]).unwrap();
+        let raw = openstrike_formats::sprite::rs2_frames(&rs2).unwrap();
+        for (i, f) in set.frames.iter().enumerate().filter(|&(i, _)| !raw[i].is_empty()) {
+            assert_eq!(f.states.len(), 4, "{climate} house {i}");
+            houses += 1;
+        }
+    }
+    assert!(houses > 100, "{houses} houses");
 }

@@ -207,44 +207,52 @@ Waves are animated overlays: `common01/misc/WAVES` (`wave water 8 wolny fl_lay .
 
 ### Objects
 
-Object sets are `<name>.rs2` + `<name>.pl` in the climate archive; `dom` is `houses.rs2`.
-`.rs2` = u32 count, u32 offsets[count + 1], then one frame per object. Each frame is a set-specific header followed
-by a run of sprites in the `.pck` frame format:
+Object sets are `<name>.rs2` + `<name>.pl` in the climate archive; `dom` is `houses.rs2`. `.rs2` = u32 count, u32
+offsets[count + 1], then one frame per object (read the same way by the game, `Game_Dll.dll` `0x10059250`). Each set
+has a class in the game: its vtable's entry 0 loads the frames, entry 2 packs a map object into a 5-byte cell record
+(`frame & 0x7f` and the state bits in a u16 with the class id in bits 11-15), entry 5 places it, entry 12 draws it.
+Every set below is decoded as its loader reads it; on the three climates every sprite fills exactly the room the
+layout gives it (9 desert `stand` sprites have rows a little too long, which the blitter just cuts), and every object
+of the 164 single-player maps finds its sprites.
 
-| Set | Header (as far as known) | Sprites |
-|---|---|---|
-| `trop`, `fre`, `vor`, `pont` | none | one flat sprite (roads, rails, paths) |
-| `lay` | u8, u32 sprite length | one or two flat sprites |
-| `zabor` (fences) | u32 sprite length (loader `0x10056dc0`) | colour, shadow |
-| `tree` | 5 bytes, then the 6-slot table (loader `0x10055890`) | standing, shadow, fallen |
-| `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ..., the 6-slot table at byte 205 | per slot |
-| `cliff` | 8 bytes | one sprite |
-| `dom` (houses) | own 512-byte palette, u16, u32, 14x14 footprint grid | per state: halves, ground, shadow |
-| `most` (bridges, piers) | own 512-byte palette, two u16, 22x22 grid, state table at 1000 | abutments + shadow, then deck + shadow per state |
+| Set | Class (load, place, draw) | Frame | Parts and layers | Placed at | State |
+|---|---|---|---|---|---|
+| `cliff` | `0x10052dc0`, `0x10052f50`, `0x10053010` | 2 u32 offsets (0 = none) | both on layers `level1`, `level2` (0) | cell corner | none |
+| `trop` | `0x10053850`, `0x100566d0`, `0x10053730` | the sprite | layer 1 | 8 px square middle | none |
+| `fre` | same as `trop` | the sprite | layer 2 | 8 px square middle | none |
+| `vor` | `0x10056510`, `0x100566d0`, `0x10056a10` | the sprite | layer 3, only where the player sees | 8 px square middle | none |
+| `lay` | `0x100539f0`, `0x10053cd0`, `0x10053fc0` | u8 has-second, u32 len, sprite, [u32 len, sprite] | layer 4 | 16 px quarter middle | `extra[0] & 1` |
+| `tree` | `0x100557e0`, `0x100559d0`, `0x10055d80` | 5 bytes, 6-slot table | upright 7, shadow 6, ground 3 | 16 px quarter middle | `extra[0] & 1` |
+| `stand` | `0x10054950`, `0x100559d0`, `0x100551a0` | u32 palette index (5 palettes), ..., footprint at 9, 6-slot table at 205 | upright 7, shadow 6, ground 2 | 16 px quarter middle | destroyed if `extra[0]` |
+| `zabor` | `0x10056dc0`, `0x10057070`, `0x10057310` | u32 len, upright sprite, shadow sprite | upright 7 (flat look: layer 5), shadow 6 | cell middle | see fences |
+| `dom` | `0x10050980`, `0x10050d40`, `0x100511d0` | see houses | halves 7 (+ depth), ground 0, shadow 6 | cell corner | `extra[0] & 3` |
+| `most` | `0x10052040`, -, `0x10052450` | see bridges | abutments and deck 0, shadows 6 | as stored | `extra[0] & 3` |
 
-The **6-slot table** (u32 offsets in the frame, 0 = none) is: colour intact, colour destroyed, shadow intact,
+Positions: the cell record keeps the cell and an 8 px quarter (`0x1004c260`); `trop`, `fre` and `vor` are drawn 4 px
+lower on screen, i.e. at the middle of their 8 px square. Houses, trees, `stand` and fences are dropped within 4
+cells of the map edge (their placement routines), the others only outside the map. Layers (`land/<SET>`, `level`,
+the same in every climate) are drawn in order 0 to 7, each sorted by sort y, then y, then x (`0x1006f740`); 6 holds
+the shadows and 7 the upright sprites. Palettes: the set's `.pl` (one palette; `stand.pl` holds 5 and the frame
+picks one), or the frame's own for `dom` and `most`.
+
+The **6-slot table** (u32 offsets in the frame, 0 = none) is: upright intact, upright destroyed, shadow intact,
 shadow destroyed, ground intact, ground destroyed. A tree's "ground destroyed" is the fallen tree; a sunken barge is
-an empty colour sprite, a shadow and a ground sprite. The intact state is slots 0, 2 and 4.
+an empty upright sprite, a shadow and a ground sprite.
 
-**House footprints** (`dom`): after the 512-byte palette come a u16, a u32, then a **14x14 grid** (read by the loader
-at `Game_Dll.dll` `0x10050980`, which then reads 8 more bytes and single bytes). Each grid tile is 16x16 map pixels.
-Tiles with **bit 0x01** block, grid tile (6, 6) under the object position, 16 px tiles: the same rule as the `stand`
-footprint routines (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`), and every solid house tile is blocked in
-the stored map passability. The house routine itself has not been read yet.
+**Houses** (`dom`, loader `0x10050980`): the 512-byte palette, a u16, a u32, the **14x14 footprint grid** (16 px
+tiles, grid tile (6, 6) under the object position, bit 0x01 solid), two i32 depth offsets for the left and right
+halves, 3 bytes, a u32 count n and 9 n bytes (entrances), a byte, three u16, then for each of the 4 states 4 sprites,
+each a u32 length and its bytes (0 = none): left half, right half, ground, shadow. The drawing adds each half's
+depth offset to its sort y. No house code writes the passability: the bits stored in the map are the houses'.
 
-**Bridges** (`most`): after the 512-byte palette come two u16, then a **22x22 grid** of 16 px tiles from byte 516 to 1000
-(98.9 % agreement with the stored passability, against 76 % at byte 518). The original
-(`Game_Dll.dll` `0x100516e7`) places grid tile (gx, gy) in map cell `(x >> 5) + (gx >> 1) - 5`, quarter `gx & 1`
-(same for y). A tile with bit 0x01 belongs to the bridge; it is open in state `s` when bit `0x10 << s` is set, blocked
-otherwise (railings 0x0b / 0x0f, abutments 0x09; 0xff, 0x7f, 0x3f, 0xfc, 0xfe are deck tiles open in some states).
-At byte 1000 a table of 11 u32 offsets (relative to 1000) gives the abutments, their shadow, the deck and its shadow
-for each of the 4 states, then the end of the frame; a 0x0 sprite means no part (frames 24 and 26 have no state-1
-shadow). Some `most` objects are piers or viaduct spans rather than river bridges.
+**Bridges** (`most`, loader `0x10052040`): the 512-byte palette, a u32, then a **22x22 grid** of 16 px tiles from
+byte 516 to 1000. The original (`0x100516e7`) places grid tile (gx, gy) in map cell `(x >> 5) + (gx >> 1) - 5`,
+quarter `gx & 1` (same for y). A tile with bit 0x01 belongs to the bridge; it is open in state `s` when bit
+`0x10 << s` is set, blocked otherwise. At byte 1000 a table of 10 u32 offsets (relative to 1000): abutments, their
+shadow, the deck and its shadow for each of the 4 states; a 0x0 sprite means no part.
 
-Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
-Sets without a table: the engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and
-draws every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
-upright sprites sorted by screen y together with the units. Code: `crates/formats/src/objects.rs`.
+Palette entry `0xF81F` (magenta) is the transparency key in object sprites. Code: `crates/formats/src/objects.rs`,
+drawing order in `crates/client/src/scene.rs`.
 
 ## Movement curves `common/CURVENEW`
 

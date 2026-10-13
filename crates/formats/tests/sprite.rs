@@ -70,9 +70,13 @@ fn shadows_halve_the_colour_and_tint_it() {
 }
 
 #[test]
-fn rejects_rows_wider_than_the_frame() {
-    let f = frame(0xa2, 2, &[&[0x83, 1]]);
-    assert!(sprite::decode(&f, &grey_palette()).is_err());
+fn rows_wider_than_the_frame_are_cut() {
+    // a run of 3 in a 2-pixel frame, and a copy counting past the end of its row
+    let img = sprite::decode(&frame(0xa2, 2, &[&[0x83, 1]]), &grey_palette()).unwrap();
+    assert_eq!(pixel(&img, 1, 0), [1, 1, 1, ALPHA_OPAQUE]);
+    let img = sprite::decode(&frame(0xa2, 4, &[&[0x04, 1, 2]]), &grey_palette()).unwrap();
+    assert_eq!(pixel(&img, 1, 0), [2, 2, 2, ALPHA_OPAQUE]);
+    assert_eq!(pixel(&img, 2, 0)[3], 0);
 }
 
 #[test]

@@ -141,7 +141,7 @@ fn main() {
 }
 
 fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
-    let assets = assets::load(&opts.data, &opts.map, &opts.climate, &PLATOON)?;
+    let assets = assets::load(&opts.data, &opts.map, opts.climate.as_deref(), &PLATOON)?;
     if assets.vehicles.is_empty() {
         return Err("no vehicle could be loaded".into());
     }
@@ -174,7 +174,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         .collect();
     // textures of the object parts this map uses
     let mut part_textures: HashMap<(usize, usize, usize), Vec<SpriteTexture>> = HashMap::new();
-    for o in objects.flat.iter().chain(&objects.shadows).chain(&objects.upright) {
+    for o in objects.ground.iter().chain(&objects.shadows).chain(&objects.upright) {
         part_textures.entry((o.set, o.frame, o.state)).or_insert_with(|| {
             let parts = assets.object_sets[o.set].frames[o.frame].parts(o.state);
             parts.iter().map(|p| upload_sprite(&mut rl, &thread, &p.image)).collect()
@@ -273,7 +273,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
             }
-            for p in &objects.flat {
+            for p in &objects.ground {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
         }
@@ -293,7 +293,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             // upright objects and units, back to front
             let mut units_left = units.iter().peekable();
             for p in &objects.upright {
-                while let Some(u) = units_left.next_if(|u| u.screen.1 <= p.screen.1) {
+                while let Some(u) = units_left.next_if(|u| u.screen.1 <= p.sort_y) {
                     draw_unit(&mut m, &vehicles[u.kind], u, view);
                 }
                 draw_sprite(&mut m, part(p), p.screen, view);

@@ -160,14 +160,18 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
             match op >> 6 {
                 3 => {}
                 2 => {
-                    let c = line.u8()? as usize;
+                    let Ok(c) = line.u8() else { break };
+                    let c = c as usize;
                     if !palette.transparent[c] {
                         (x..x + n).for_each(|i| put(i, palette.colours[c], ALPHA_OPAQUE));
                     }
                 }
                 m => {
+                    // a few frames count past the end of their row: the original blitter stops at
+                    // the row end, so take what is there
                     let a = if m == 0 { ALPHA_OPAQUE } else { ALPHA_BLEND };
-                    for (i, &c) in line.bytes(n)?.iter().enumerate() {
+                    let take = n.min(length - line.pos());
+                    for (i, &c) in line.bytes(take)?.iter().enumerate() {
                         if !palette.transparent[c as usize] {
                             put(x + i, palette.colours[c as usize], a);
                         }
@@ -175,9 +179,6 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
                 }
             }
             x += n;
-        }
-        if x > w {
-            return Err(Error::Invalid(format!("row {y} is {x} pixels wide, frame is {w}")));
         }
     }
     Ok(Image { anchor: (x0, y0), width: w as u32, height: h as u32, rgba })

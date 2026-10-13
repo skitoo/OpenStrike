@@ -70,6 +70,18 @@ impl Map {
         ((self.layer2[(y * self.width + x) as usize] >> 8) & 0xf) as u8
     }
 
+    /// Climate of the map from `header[4]`: 0 summer, 1 winter, 2 beach, 3 desert, matching the
+    /// archive schemes 1-4 of `sudtest.ini` (observed on the 164 single-player maps: winter and
+    /// desert maps carry 1 and 3; where the game reads it is not checked yet).
+    pub fn climate(&self) -> &'static str {
+        match self.header[4] {
+            1 => "winter",
+            2 => "beach",
+            3 => "desert",
+            _ => "summer",
+        }
+    }
+
     pub fn pixel_size(&self) -> (u32, u32) {
         (self.width * CELL, self.height * CELL)
     }

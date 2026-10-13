@@ -185,6 +185,18 @@ none/track/whell), `movespeed` (`+0xb33`, `+0xb37`), `expa_crush` (`+0xb3b`, `+0
 
 ## Map objects and drawing
 
+Object classes (instance, vtable, class id): `dom` (7, vtable `0x100abad0`), `most` (8, `0x100abb68`), `cliff`
+(`0x10288698`, `0x100abbb4`, 6), `fre` (`0x10288ab0`, `0x100abc04`, 1), `lay` (`0x10288ec0`, `0x100abc50`, 9),
+`stand` (`0x1028cbb0`, `0x100abce8`, 4), `tree` (`0x10291040`, `0x100abd34`, 3), `trop` (`0x10294658`, `0x100abd80`, 2),
+`vor` (`0x10298288`, `0x100abe18`, 5), `zabor` (`0x102988d8`, `0x100abe64`, 10), `unit` (`0x10294a70`, `0x100abdcc`).
+Vtable entries: 0 load, 2 encode a map object, 3 decode, 4 place at a point, 5 place a map object, 12 draw. The
+per-set loaders, placements and drawings are listed in `docs/formats.md` (Objects). Shared: `0x1004c260` puts an
+object in its cell (record: next u16, palette nibble and 8 px quarter bits, u16 word), `0x1006ffb0` / `0x1006f740`
+add a sprite to a layer's draw list (20-byte items: next, x, y, sort y, record, sprite, palette), sorted by sort y,
+y, x. Layers come from `land/<SET>` (`level`), read by each class (`0x100530c0` for `cliff`'s `level1`/`level2`).
+Unit sprites go through `0x100068d0` and `0x1000d0d0` (layer given by the caller; which one is not read yet).
+
+
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |

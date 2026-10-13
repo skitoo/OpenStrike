@@ -7,7 +7,7 @@ Usage: openstrike [options] [map.ssm]
 
 Options:
   --data DIR          Sudden Strike Gold install (default: data/SuddenStrikeGold)
-  --climate NAME      beach, desert, summer or winter (default: summer)
+  --climate NAME      beach, desert, summer or winter (default: the map's)
   --look-at X,Y       centre the camera on a map pixel at start
   --zoom Z            initial zoom (0.5 to 3)
   --show-blocked      show the blocked terrain tiles (toggle in game with B)
@@ -22,7 +22,8 @@ pub const CLIMATES: [&str; 4] = ["beach", "desert", "summer", "winter"];
 pub struct Options {
     pub data: PathBuf,
     pub map: PathBuf,
-    pub climate: String,
+    /// Overrides the map's climate.
+    pub climate: Option<String>,
     pub screenshot: Option<PathBuf>,
     /// Map pixel to centre the camera on at start (defaults to the first unit).
     pub look_at: Option<(i32, i32)>,
@@ -46,7 +47,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
     let mut o = Options {
         data: PathBuf::from("data/SuddenStrikeGold"),
         map: PathBuf::new(),
-        climate: "summer".into(),
+        climate: None,
         screenshot: None,
         look_at: None,
         zoom: 1.0,
@@ -61,7 +62,7 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
                 if !CLIMATES.contains(&c.as_str()) {
                     return Err(format!("unknown climate {c:?}, expected one of {}", CLIMATES.join(", ")));
                 }
-                o.climate = c;
+                o.climate = Some(c);
             }
             "--screenshot" => o.screenshot = Some(value(&mut args, &a)?.into()),
             "--show-blocked" => o.show_blocked = true,

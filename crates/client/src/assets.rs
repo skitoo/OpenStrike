@@ -46,27 +46,25 @@ pub struct Assets {
 
 pub const CLIMATES: [&str; 4] = ["beach", "desert", "summer", "winter"];
 
-/// Climate an archive belongs to (`summer01`, `desc_summer`, `summer_edit` -> summer), if any.
-fn archive_climate(stem: &str) -> Option<&'static str> {
-    let stem = stem.to_ascii_lowercase();
-    let stem = stem.strip_prefix("desc_").unwrap_or(&stem);
-    CLIMATES.into_iter().find(|c| stem.starts_with(c))
+/// The archives the game mounts (`sudtest.ini`, `DataPathScm*_0`): the shared ones, then the
+/// climate's, the first listed taking precedence. `common01`, `summer01`, `winter01`, `menu01` and
+/// the `_edit` archives are not listed; how the game uses them is not read yet.
+fn archives(climate: &str) -> Vec<&'static str> {
+    let mut list = vec!["common", "units", "animats", "desc_common"];
+    list.extend(match climate {
+        "winter" => ["winter", "desc_winter"].as_slice(),
+        "beach" => ["beach", "summer", "desc_summer"].as_slice(),
+        "desert" => ["desert", "desc_desert"].as_slice(),
+        _ => ["summer", "desc_summer"].as_slice(),
+    });
+    list
 }
 
-/// Mount the shared archives, then the ones of `climate`: climate archives reuse the same names
-/// (every one has a `mappic.rs2`), so only one climate can be mounted at a time.
+/// Mount the archives of `climate` (later mounts win, so the list is mounted in reverse).
 pub fn mount(data_dir: &Path, climate: &str) -> Result<Vfs, Error> {
-    let mut paths: Vec<_> = std::fs::read_dir(data_dir)?
-        .filter_map(|e| e.ok().map(|e| e.path()))
-        .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("sue")))
-        .collect();
-    let stem = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-    paths.sort_by_key(|p| (archive_climate(&stem(p)).is_some(), stem(p)));
     let mut vfs = Vfs::default();
-    for p in paths {
-        if archive_climate(&stem(&p)).is_none_or(|c| c == climate) {
-            vfs.mount(Archive::parse(std::fs::read(&p)?)?);
-        }
+    for name in archives(climate).into_iter().rev() {
+        vfs.mount(Archive::parse(std::fs::read(data_dir.join(format!("{name}.sue")))?)?);
     }
     Ok(vfs)
 }
@@ -129,9 +127,10 @@ fn object_set(vfs: &Vfs, name: &str) -> Result<ObjectSet, Error> {
     Ok(objects::load_set(name, &rs2, &palettes).unwrap_or_default())
 }
 
-pub fn load(data_dir: &Path, map_path: &Path, climate: &str, vehicles: &[&str]) -> Result<Assets, Error> {
-    let vfs = mount(data_dir, climate)?;
+/// Load a map and what it needs. `climate` overrides the map's own (see `Map::climate`).
+pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, vehicles: &[&str]) -> Result<Assets, Error> {
     let map = map::parse(&std::fs::read(map_path)?)?;
+    let vfs = mount(data_dir, climate.unwrap_or(map.climate()))?;
     let object_sets = map.object_sets.iter().map(|n| object_set(&vfs, n)).collect::<Result<_, _>>()?;
     Ok(Assets {
         projection: Projection::of(&map),

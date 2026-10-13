@@ -2,7 +2,7 @@
 
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::Map;
-use openstrike_formats::objects::{Layer, ObjectSet, map_state};
+use openstrike_formats::objects::{LAYER_SHADOW, LAYER_UPRIGHT, ObjectSet, fence_lies_flat, ground_layer, map_state, placement};
 use openstrike_sim::{SUBPIXEL, UnitId, World};
 
 /// One part of a map object, in screen pixels.
@@ -14,12 +14,18 @@ pub struct ObjectPart {
     /// State drawn (the map's state when decoded, else 0).
     pub state: usize,
     pub part: usize,
+    /// Layer it is drawn on (0-7, as in the game).
+    pub layer: u8,
+    /// Screen y used to sort a layer back to front (the house halves add their depth).
+    pub sort_y: i32,
 }
 
-/// Map object parts sorted into the three layers. Upright parts are sorted back to front.
+/// Map object parts by layer, each sorted as the game's draw lists are (`Game_Dll.dll`
+/// `0x1006f740`: sort y, then y, then x).
 #[derive(Debug, Default)]
 pub struct Objects {
-    pub flat: Vec<ObjectPart>,
+    /// Layers 0-5, in layer order.
+    pub ground: Vec<ObjectPart>,
     pub shadows: Vec<ObjectPart>,
     pub upright: Vec<ObjectPart>,
 }
@@ -30,18 +36,24 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
         let (set, frame) = (o.set as usize, o.frame as usize);
         let Some(object) = sets.get(set).and_then(|s| s.frames.get(frame)) else { continue };
         let name = map.object_sets.get(set).map_or("", String::as_str);
+        let Some((px, py)) = placement(name, o.x, o.y, map.width, map.height) else { continue };
         let state = object.resolve(map_state(name, o.extra[0]));
-        let screen = proj.to_screen(o.x as i32, o.y as i32);
+        let screen = proj.to_screen(px, py);
+        let flat_fence = name.eq_ignore_ascii_case("zabor") && fence_lies_flat(o.extra);
         for (part, p) in object.parts(state).iter().enumerate() {
-            let item = ObjectPart { screen, set, frame, state, part };
-            match p.layer {
-                Layer::Flat => out.flat.push(item),
-                Layer::Shadow => out.shadows.push(item),
-                Layer::Upright => out.upright.push(item),
+            let layer = if flat_fence && p.layer == LAYER_UPRIGHT { ground_layer(name) } else { p.layer };
+            let item = ObjectPart { screen, set, frame, state, part, layer, sort_y: screen.1 + p.depth };
+            match layer {
+                LAYER_UPRIGHT => out.upright.push(item),
+                LAYER_SHADOW => out.shadows.push(item),
+                _ => out.ground.push(item),
             }
         }
     }
-    out.upright.sort_by_key(|p| p.screen.1);
+    let key = |p: &ObjectPart| (p.layer, p.sort_y, p.screen.1, p.screen.0);
+    out.ground.sort_by_key(key);
+    out.shadows.sort_by_key(key);
+    out.upright.sort_by_key(key);
     out
 }
 
