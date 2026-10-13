@@ -180,6 +180,23 @@ pub fn map_state(set: &str, extra0: u8) -> usize {
     }
 }
 
+/// Fence (`zabor`) frame from its extra bytes. The game repacks each fence into a 5-byte cell
+/// record (`Game_Dll.dll` `0x10056e80`: position to 8 px, `extra[0] & 3`, `extra[1]`, and
+/// `(frame % 40) / 8` or `frame & 7`) and rebuilds the frame from it (`0x10056f60`):
+/// `extra[0]` is the fence kind, a block of 40 frames; `extra[1]` bits 1-3 the piece and bit 0 an
+/// alternative look. Pieces 0-3: `kind * 40 + variant * 8 + look * 4 + piece`; piece 4 (a post):
+/// `kind * 40 + (3 + look) * 8 + (frame & 7)`. All 190,284 fences of the single-player maps give
+/// back their frame.
+pub fn fence_frame(frame: u8, extra: [u8; 2]) -> u8 {
+    let (kind, look, piece) = ((extra[0] & 3) as u32, (extra[1] & 1) as u32, ((extra[1] >> 1) & 7) as u32);
+    if piece == 4 {
+        (((kind * 5 + look + 3) << 3) + (frame & 7) as u32) as u8
+    } else {
+        let variant = ((frame % 40) / 8) as u32;
+        ((((variant + kind * 5) * 2 + look) * 4) + piece) as u8
+    }
+}
+
 /// The sprites of a frame from `start`, cut into groups that each end with a shadow; sprites after
 /// the last shadow form a last group.
 fn sprite_groups(frame: &[u8], start: usize) -> Vec<Vec<(usize, u8)>> {

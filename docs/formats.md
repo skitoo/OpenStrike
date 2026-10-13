@@ -166,8 +166,10 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
 ### Object states
 
 `Object::extra[0]` is the object's state in the map (0 = intact). Seen on all single-player maps: houses 0-3
-(1,649 damaged), trees 0-1 (3,092 down), `stand` 0-1, `lay` 0-1, bridges 0-3; fences use both bytes differently
-(unknown). Bridges, houses, trees and `stand` objects are drawn in their stored state (`objects::map_state`); other sets are
+(1,649 damaged), trees 0-1 (3,092 down), `stand` 0-1, `lay` 0-1, bridges 0-3. Fences (`zabor`) use both bytes for the frame: `extra[0]` is the
+fence kind (blocks of 40 frames), `extra[1]` bits 1-3 the piece (4 = post) and bit 0 an alternative look; the game
+rebuilds the frame from them (`Game_Dll.dll` `0x10056e80` / `0x10056f60`, `objects::fence_frame`, checked on all
+190,284 fences). Bridges, houses, trees and `stand` objects are drawn in their stored state (`objects::map_state`); other sets are
 drawn intact.
 
 Rules read in `Game_Dll.dll`:

@@ -179,3 +179,17 @@ fn unit_descriptions_follow_their_includes() {
     assert_eq!(desc.int("CanMoveBackward", 0), Some(1));
     assert_eq!(desc.get("Engine").map(|v| v[0].as_str()), Some("Track"));
 }
+
+#[test]
+fn fence_frames_follow_their_extra_bytes() {
+    let Some(dir) = data_dir() else { return };
+    let mut fences = 0;
+    for e in std::fs::read_dir(dir.join("Maps/single")).unwrap() {
+        let Ok(m) = map::parse(&std::fs::read(e.unwrap().path()).unwrap()) else { continue };
+        for o in m.objects.iter().filter(|o| m.object_sets[o.set as usize] == "zabor") {
+            assert_eq!(openstrike_formats::objects::fence_frame(o.frame, o.extra), o.frame);
+            fences += 1;
+        }
+    }
+    assert_eq!(fences, 190_284);
+}

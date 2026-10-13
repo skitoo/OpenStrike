@@ -183,4 +183,5 @@ none/track/whell), `movespeed` (`+0xb33`, `+0xb37`), `expa_crush` (`+0xb3b`, `+0
 | `0x100500c0`, `0x100511d0`, `0x10050890` | house instance, drawing (4 groups per state), state from hit points |
 | `0x10054b61`, `0x10054cda`, `0x10054f02`, `0x10055694` | `stand` objects (state, footprint updates) |
 | `0x100560e5` | tree state from `extra0 & 1` |
-| `0x10056e81` | fences: use both extra bytes, not read yet |
+| `0x100abe64` | fence (`zabor`) class vtable: `+0x8` `0x10056e80` map object -> 5-byte cell record, `+0xc` `0x10056f60` record -> map object (kind, piece, look; see `objects::fence_frame`); `0x10056d1a` places random fences (draws the generator) |
+| `[0x100c54e0]`, `0x100c54e8` | runtime object records (5 bytes: ?, ?, position quarter bits, u16 `class << 11 \| data`) and per-cell index (u16); `[0x10288664 + 4 * class]` the object classes; `0x1004d1bb` writes them back as map objects |
