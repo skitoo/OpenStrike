@@ -231,6 +231,23 @@ Sets without a table: the engine locates the sprites with `sprite::frame_len` (a
 draws every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
 upright sprites sorted by screen y together with the units. Code: `crates/formats/src/objects.rs`.
 
+## Movement curves `common/CURVENEW`
+
+81 records, one per pair of directions `next * 9 + previous` (0-7 the neighbour steps, 8 stopped): a `u8` count then
+that many `(x, y, length)` `i16` triples, 2,799 bytes in all. `x`, `y` are in 1/256 px from the top-left corner of
+the cell the unit is in; `length` is the distance driven so far. Straight on east `(0, 0)` is the single point
+(0, 3840): the west edge of the new cell, 15 px down; stopping `(8, d)` ends in the middle (3840, 3840);
+`(8, 8)` is empty. Loaded by `Game_Dll.dll` `0x1003e1d3` into `0x100b7360`. Use: `docs/movement.md`.
+Code: `crates/formats/src/curves.rs`.
+
+## Unit descriptions `desc_common/units/<name>`
+
+Text lines `Key value...`, values separated by blanks or commas; `#hu\light.tank.common` includes another file
+(path from the archive root) at that point, so later keys override it; `-` lines are comments. The game parses the
+keys lowercased (`Game_Dll.dll` `0x100479c0` for vehicles: `engine`, `movespeed`, `expa_crush`, `ignoremines`,
+`movedamagehp`, `movesmoke`, `canmovebackward`, `backmovespeed`...). `File` names the sprites (`sherman5` uses
+`sherm-5`). Code: `crates/formats/src/desc.rs`.
+
 ## Other
 
 - `sounds.hdr`: table of 427 (`0x1A7`) sound entries, names such as `$signal`.

@@ -3,7 +3,7 @@
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::Map;
 use openstrike_formats::objects::{Layer, ObjectSet, map_state};
-use openstrike_sim::{Direction, SUBPIXEL, UnitId, World};
+use openstrike_sim::{SUBPIXEL, UnitId, World};
 
 /// One part of a map object, in screen pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -45,19 +45,22 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
     out
 }
 
-/// A unit as drawn: screen position and the sprite frame of its heading.
+/// A unit as drawn: screen position and the sprite frames of its hull and turret headings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitView {
     pub id: UnitId,
-    pub kind: String,
+    /// Index into the vehicle types.
+    pub kind: usize,
     pub screen: (i32, i32),
     pub frame: usize,
+    pub turret_frame: usize,
 }
 
-/// Sprite frame for a map-space heading: the heading is projected, then matched to the 32 screen
-/// headings of the sprite strip (frame k faces (k + 4) * 11.25 degrees clockwise from east).
-pub fn frame_for(facing: Direction) -> usize {
-    let angle = (facing.0 as f32) * std::f32::consts::TAU / Direction::COUNT as f32;
+/// Sprite frame for a map heading (0-31, clockwise from east): the heading is projected, then
+/// matched to the 32 screen headings of the sprite strip (frame k faces (k + 4) * 11.25 degrees
+/// clockwise from east). How the game picks the frame is not read in its code yet.
+pub fn frame_for(heading: u8) -> usize {
+    let angle = (heading as f32) * std::f32::consts::TAU / 32.0;
     let (dx, dy) = (angle.cos(), angle.sin());
     let (sx, sy) = (dx - dy, (dx + dy) / 2.0);
     let screen_heading = (sy.atan2(sx) / std::f32::consts::TAU * 32.0).round().rem_euclid(32.0) as u8;
@@ -68,11 +71,15 @@ pub fn units(world: &World, proj: &Projection) -> Vec<UnitView> {
     world
         .units
         .iter()
-        .map(|u| UnitView {
-            id: u.id,
-            kind: u.kind.clone(),
-            screen: proj.to_screen(u.pos.x / SUBPIXEL, u.pos.y / SUBPIXEL),
-            frame: frame_for(u.facing),
+        .map(|u| {
+            let (x, y) = u.position();
+            UnitView {
+                id: u.id,
+                kind: u.kind,
+                screen: proj.to_screen(x.div_euclid(SUBPIXEL), y.div_euclid(SUBPIXEL)),
+                frame: frame_for(u.facing),
+                turret_frame: frame_for(u.turret),
+            }
         })
         .collect()
 }

@@ -8,16 +8,18 @@ OpenStrike ships no game data. You need your own copy of *Sudden Strike Gold* (S
 ## Status
 
 Early engine: a map is drawn in the game's isometric view with its ground, roads, rails, trees, fences and
-buildings, bridges and piers; a platoon of six tanks can be selected and sent around water and buildings.
-File formats are being reverse engineered; see `docs/formats.md`.
+buildings, bridges and piers; a platoon of six tanks can be selected and sent around water and buildings,
+moving and finding their way with the original game's rules and path finder.
+File formats are being reverse engineered; see `docs/formats.md` and `docs/movement.md`.
 
 ## Architecture
 
 Functional core, imperative shell:
 
 - `crates/formats` (`openstrike-formats`): pure decoders, bytes in, plain data out (archives, palettes, sprites, maps, ground).
-- `crates/sim` (`openstrike-sim`): the deterministic simulation, `step(&World, &[Command]) -> World` at a fixed
-  20 ticks per second, integer arithmetic only, so that replays and lockstep multiplayer stay possible.
+- `crates/sim` (`openstrike-sim`): the deterministic simulation, `step(&World, &Rules, &[Command]) -> World` at the
+  game's 25 ticks per second, reproducing the original movement code (`docs/movement.md`), so that replays and
+  lockstep multiplayer stay possible. Integer arithmetic, except where the original itself uses floating point.
 - `crates/client` (`openstrike`): the raylib shell. It reads devices into commands, calls `step`, and draws the world.
   No game logic lives here.
 
@@ -34,7 +36,7 @@ cargo test --workspace --release                        # data tests are skipped
 ```
 
 Controls: left click or drag to select (Shift adds), right click to move, arrows / WASD or middle drag to scroll,
-wheel to zoom, B to show blocked tiles.
+wheel to zoom, B to show blocked cell quarters.
 Debug options: `--look-at x,y`, `--zoom z`, `--show-blocked`, `--screenshot file.png`.
 
 ## Layout

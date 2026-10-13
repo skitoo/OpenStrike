@@ -5,7 +5,7 @@ use std::path::PathBuf;
 use openstrike::{assets, terrain};
 use openstrike_formats::map::GROUND_WATER;
 use openstrike_formats::objects::{BRIDGE_OPEN, BRIDGE_PART, BRIDGE_SIZE, FOOTPRINT_ORIGIN, FOOTPRINT_SOLID, bridge_tile};
-use openstrike_sim::path;
+use openstrike_sim::{Command, Order, Rules, Unit, UnitId, World, step};
 
 fn data_dir() -> Option<PathBuf> {
     let dir = std::env::var_os("OPENSTRIKE_DATA")
@@ -22,7 +22,7 @@ fn water_and_houses_are_blocked_in_the_stored_terrain() {
     for cy in 0..a.map.height {
         for cx in 0..a.map.width {
             if a.map.ground_type(cx, cy) == GROUND_WATER {
-                assert!(!t.passable(2 * cx as i32, 2 * cy as i32), "water cell {cx},{cy} is open");
+                assert!(t.quarter_blocked(2 * cx as i32, 2 * cy as i32), "water cell {cx},{cy} is open");
             }
         }
     }
@@ -33,7 +33,7 @@ fn water_and_houses_are_blocked_in_the_stored_terrain() {
             for (gx, v) in row.iter().enumerate() {
                 if v & FOOTPRINT_SOLID != 0 {
                     let (tx, ty) = ((o.x as i32 >> 4) + gx as i32 - FOOTPRINT_ORIGIN, (o.y as i32 >> 4) + gy as i32 - FOOTPRINT_ORIGIN);
-                    assert!(!t.passable(tx, ty), "house tile {tx},{ty} is open");
+                    assert!(t.quarter_blocked(tx, ty), "house tile {tx},{ty} is open");
                 }
             }
         }
@@ -55,11 +55,12 @@ fn bridges_open_their_deck_as_the_original_rule_says() {
                 continue;
             }
             let (tx, ty) = bridge_tile(o.x, o.y, (i % BRIDGE_SIZE) as i32, (i / BRIDGE_SIZE) as i32);
-            if !t.contains(tx, ty) {
+            // the border cells are forced blocked by the game's loader
+            if tx < 8 || ty < 8 || tx >= 2 * t.width - 8 || ty >= 2 * t.height - 8 {
                 continue;
             }
             let open = v & (BRIDGE_OPEN << o.extra[0]) != 0;
-            agree += (t.passable(tx, ty) == open) as u32;
+            agree += (!t.quarter_blocked(tx, ty) == open) as u32;
             total += 1;
         }
     }
@@ -67,45 +68,40 @@ fn bridges_open_their_deck_as_the_original_rule_says() {
 }
 
 #[test]
-fn tanks_can_cross_the_rhine_bridges() {
+fn a_tank_crosses_the_rhine() {
+    // a T-26 ordered from the west bank to the east bank, with the game's own movement and path
+    // finder: the river runs north-south through the middle, crossed by bridges around y = 30-56
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
     let a = assets::load(&dir, &map_path, "summer", &["t-26"]).unwrap();
-    let t = terrain::build(&a.map);
-    let most = a.map.object_sets.iter().position(|n| n == "most").unwrap();
-    let mut crossings = 0;
-    for o in a.map.objects.iter().filter(|o| o.set as usize == most) {
-        let Some(grid) = a.object_sets[most].bridges[o.frame as usize].as_ref() else { continue };
-        // the intact deck of this bridge, placed with the original formula
-        let deck: Vec<(i32, i32)> = grid
-            .iter()
-            .enumerate()
-            .filter(|&(_, &v)| v & BRIDGE_PART != 0 && v & (BRIDGE_OPEN << o.extra[0]) != 0)
-            .map(|(i, _)| bridge_tile(o.x, o.y, (i % BRIDGE_SIZE) as i32, (i / BRIDGE_SIZE) as i32))
-            .collect();
-        let water = |&(x, y): &(i32, i32)| a.map.ground_type((x / 2) as u32, (y / 2) as u32) == GROUND_WATER;
-        if !deck.iter().any(water) {
-            continue; // not over water
+    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![a.vehicles[0].unit_type.clone()] };
+    let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
+    let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
+    let (from, to) = (near(30, 44), near(100, 48));
+    let mut w = step(&World::new(vec![Unit::new(UnitId(1), 0, from, 0)], 0), &rules, &[Command::Move { unit: UnitId(1), to }]);
+    let mut seen_east_of_river = false;
+    for _ in 0..20_000 {
+        w = step(&w, &rules, &[]);
+        let c = w.units[0].cell;
+        assert!(free(c.0, c.1), "drove onto a blocked cell {c:?}");
+        seen_east_of_river |= c.0 > 86;
+        if w.units[0].order == Order::Idle {
+            break;
         }
-        let (from, to) = deck
-            .iter()
-            .flat_map(|&p| deck.iter().map(move |&q| (p, q)))
-            .max_by_key(|&(p, q)| (p.0 - q.0).pow(2) + (p.1 - q.1).pow(2))
-            .unwrap();
-        let route = path::find(&t, from, to).expect("no route over the bridge");
-        assert!(route.iter().any(water), "the route does not cross the water");
-        crossings += 1;
     }
-    // most bridge objects of this map are viaduct spans over land; two road spans cross the river
-    assert!(crossings >= 2, "{crossings} bridges crossed");
+    assert!(seen_east_of_river, "stayed on the west bank, at {:?}", w.units[0].cell);
+    assert_eq!(w.units[0].cell, to);
 }
 
 #[test]
 fn the_platoon_loads() {
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Act of Sabotage'.ssm");
-    let names = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherm-5"];
+    let names = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman5"];
     let a = assets::load(&dir, &map_path, "summer", &names).unwrap();
-    let loaded: Vec<&str> = a.vehicles.iter().map(|(n, _)| n.as_str()).collect();
+    let loaded: Vec<&str> = a.vehicles.iter().map(|v| v.name.as_str()).collect();
     assert_eq!(loaded, names);
+    // speeds in 1/256 px per tick, from MoveSpeed (second value, scaled and truncated)
+    let speeds: Vec<i32> = a.vehicles.iter().map(|v| v.unit_type.speed(0x8000)).collect();
+    assert_eq!(speeds[..3], [384, 371, 243]);
 }

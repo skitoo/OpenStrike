@@ -2,13 +2,14 @@
 
 use std::path::Path;
 
-use openstrike_formats::hot;
+use openstrike_formats::{curves, desc, hot};
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
 use openstrike_formats::objects::{self, ObjectSet};
 use openstrike_formats::palette::Palette;
 use openstrike_formats::sprite::{self, Image, KIND_SHADOW};
 use openstrike_formats::sue::{Archive, Vfs};
+use openstrike_sim::UnitType;
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -22,6 +23,14 @@ pub struct VehicleSprites {
     pub mounts: Vec<(i32, i32)>,
 }
 
+/// A vehicle type: its description and its sprites.
+pub struct Vehicle {
+    /// Description name (`units/<name>` in `desc_common`).
+    pub name: String,
+    pub unit_type: UnitType,
+    pub sprites: VehicleSprites,
+}
+
 pub struct Assets {
     pub map: Map,
     pub projection: Projection,
@@ -29,8 +38,10 @@ pub struct Assets {
     pub rhomb_palettes: Vec<Palette>,
     /// One per entry of `map.object_sets`; empty when the set could not be loaded.
     pub object_sets: Vec<ObjectSet>,
-    /// Sprites per vehicle name, for the vehicles that could be loaded.
-    pub vehicles: Vec<(String, VehicleSprites)>,
+    /// The vehicles that could be loaded, in the order asked.
+    pub vehicles: Vec<Vehicle>,
+    /// `CURVENEW` points per `next * 9 + previous`.
+    pub curves: Vec<Vec<(i16, i16)>>,
 }
 
 pub const CLIMATES: [&str; 4] = ["beach", "desert", "summer", "winter"];
@@ -60,7 +71,25 @@ pub fn mount(data_dir: &Path, climate: &str) -> Result<Vfs, Error> {
     Ok(vfs)
 }
 
-pub fn vehicle(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
+/// Movement parameters and sprite file of a unit from its description.
+pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String), Error> {
+    let d = desc::load(&format!("units/{name}"), &mut |n| vfs.read(n).ok().flatten())?;
+    let missing = |key: &str| format!("{name}: no {key} in the description");
+    let speed = (d.float("MoveSpeed", 0).ok_or_else(|| missing("MoveSpeed"))?, d.float("MoveSpeed", 1).ok_or_else(|| missing("MoveSpeed"))?);
+    let turn = (d.int("TurnDelay", 0).ok_or_else(|| missing("TurnDelay"))?, d.int("TurnDelay", 1).ok_or_else(|| missing("TurnDelay"))?);
+    let mut t = UnitType::new(name, speed, turn, d.int("GunTurnDelay", 0).unwrap_or(0));
+    t.ignore_mines = d.int("IgnoreMines", 0).unwrap_or(0) != 0;
+    t.can_move_backward = d.int("CanMoveBackward", 0).unwrap_or(0) != 0;
+    let file = d.get("File").and_then(|v| v.first()).ok_or_else(|| missing("File"))?.to_ascii_lowercase();
+    Ok((t, file))
+}
+
+pub fn vehicle(vfs: &Vfs, name: &str) -> Result<Vehicle, Error> {
+    let (unit_type, file) = unit_type(vfs, name)?;
+    Ok(Vehicle { name: name.to_string(), unit_type, sprites: vehicle_sprites(vfs, &file)? })
+}
+
+pub fn vehicle_sprites(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
     let pck = vfs.require(&format!("{name}.pck"))?;
     let palette = Palette::parse(&vfs.require(&format!("{name}.col"))?)?;
     let frames = sprite::pck_frames(&pck)?;
@@ -109,7 +138,8 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: &str, vehicles: &[&str]) 
         rhombs: vfs.require("mappic.rs2")?,
         rhomb_palettes: Palette::parse_many(&vfs.require("rhomb.pl")?)?,
         object_sets,
-        vehicles: vehicles.iter().filter_map(|n| vehicle(&vfs, n).ok().map(|v| (n.to_string(), v))).collect(),
+        vehicles: vehicles.iter().filter_map(|n| vehicle(&vfs, n).ok()).collect(),
+        curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })
 }

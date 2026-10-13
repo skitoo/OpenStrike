@@ -1,135 +1,175 @@
-use openstrike_sim::terrain::TILE;
-use openstrike_sim::{Command, Direction, Order, SUBPIXEL, Terrain, Unit, UnitId, Vec2, World, step};
+use openstrike_sim::grid::{DIRS, STOP};
+use openstrike_sim::{Command, Grid, Order, PathStatus, Rules, Unit, UnitId, UnitType, World, step};
 
-const T: i32 = TILE * SUBPIXEL;
-
-fn tank(x: i32, y: i32) -> Unit {
-    Unit {
-        id: UnitId(1),
-        kind: "t-26".into(),
-        pos: Vec2::new(x, y),
-        facing: Direction(0),
-        speed: 2 * SUBPIXEL,
-        order: Order::Idle,
+/// Curves shaped like the game's: one point on the edge the unit enters by, the stop point at
+/// (15, 15) px, nothing for "stopped to stopped".
+fn curves() -> Vec<Vec<(i16, i16)>> {
+    let mut out = Vec::new();
+    for next in 0..9u8 {
+        for _previous in 0..9u8 {
+            out.push(match next {
+                STOP => vec![(0xf00, 0xf00)],
+                d => {
+                    let (dx, dy) = DIRS[d as usize];
+                    vec![((0xf00 - dx * 0xf00) as i16, (0xf00 - dy * 0xf00) as i16)]
+                }
+            });
+        }
     }
+    out[STOP as usize * 9 + STOP as usize].clear();
+    out
 }
 
-fn world() -> World {
-    World::new(Vec2::new(4096 * SUBPIXEL, 4096 * SUBPIXEL), vec![tank(T / 2, T / 2)])
+fn tank() -> UnitType {
+    let mut t = UnitType::new("t-26", (1.4, 1.5), (5, 3), 1);
+    t.can_move_backward = false;
+    t
 }
 
-fn open() -> Terrain {
-    Terrain::open(256, 256)
+fn rules(grid: Grid) -> Rules {
+    Rules { grid, curves: curves(), types: vec![tank()] }
 }
 
-fn run(mut w: World, terrain: &Terrain, ticks: usize, first: &[Command]) -> World {
-    w = step(&w, terrain, first);
+fn open() -> Rules {
+    rules(Grid::open(64, 64))
+}
+
+fn run(mut w: World, rules: &Rules, ticks: usize, first: &[Command]) -> World {
+    w = step(&w, rules, first);
     for _ in 1..ticks {
-        w = step(&w, terrain, &[]);
+        w = step(&w, rules, &[]);
     }
     w
 }
 
-fn move_to(x: i32, y: i32) -> Command {
-    Command::Move { unit: UnitId(1), to: Vec2::new(x, y) }
+fn one_tank(cell: (i16, i16), facing: u8) -> World {
+    World::new(vec![Unit::new(UnitId(1), 0, cell, facing)], 1)
+}
+
+fn move_to(x: i16, y: i16) -> Command {
+    Command::Move { unit: UnitId(1), to: (x, y) }
+}
+
+#[test]
+fn speeds_and_delays_come_from_the_description() {
+    let t = tank();
+    assert_eq!((t.move_min, t.move_range), (358, 26));
+    assert_eq!(t.speed(0x8000), 384);
+    assert_eq!(t.turn_delay(0x8000), 3);
 }
 
 #[test]
 fn idle_units_stay_put() {
-    let w = run(world(), &open(), 10, &[]);
-    assert_eq!(w.units[0].pos, Vec2::new(T / 2, T / 2));
+    let w = run(one_tank((10, 10), 0), &open(), 10, &[]);
+    assert_eq!(w.units[0].cell, (10, 10));
+    assert_eq!(w.units[0].sub, (0xf00, 0xf00));
     assert_eq!(w.tick, 10);
 }
 
 #[test]
-fn units_reach_their_target_and_stop() {
-    let to = Vec2::new(100 * SUBPIXEL, 50 * SUBPIXEL);
-    let w = run(world(), &open(), 100, &[move_to(to.x, to.y)]);
-    assert_eq!(w.units[0].pos, to);
-    assert_eq!(w.units[0].order, Order::Idle);
+fn units_reach_their_goal_cell_and_stop_in_its_middle() {
+    let w = run(one_tank((10, 10), 0), &open(), 400, &[move_to(20, 14)]);
+    let u = &w.units[0];
+    assert_eq!(u.cell, (20, 14));
+    assert_eq!(u.sub, (0xf00, 0xf00));
+    assert_eq!(u.order, Order::Idle);
+    assert_eq!(u.goal, None);
 }
 
 #[test]
-fn moving_units_face_their_target() {
-    let w = step(&world(), &open(), &[move_to(T / 2, 100 * SUBPIXEL)]);
-    assert_eq!(w.units[0].facing, Direction(8));
+fn a_straight_run_takes_cell_length_over_speed() {
+    // 10 cells east at 384/256 px per tick: 8192 * 10 / 384 = 213 ticks, less the snapping to
+    // each curve point within 0xfa
+    let mut w = step(&one_tank((10, 10), 0), &open(), &[move_to(20, 10)]);
+    let mut ticks = 1;
+    while w.units[0].order != Order::Idle && ticks < 1000 {
+        w = step(&w, &open(), &[]);
+        ticks += 1;
+    }
+    assert_eq!(w.units[0].cell, (20, 10));
+    assert!((205..=215).contains(&ticks), "took {ticks} ticks");
+}
+
+#[test]
+fn units_turn_in_place_before_driving() {
+    // facing west, ordered east: 16 heading steps, one every 4 ticks, before any move
+    let mut w = step(&one_tank((10, 10), 16), &open(), &[move_to(14, 10)]);
+    let start = w.units[0].position();
+    for _ in 0..80 {
+        w = step(&w, &open(), &[]);
+        if w.units[0].facing == 0 {
+            break;
+        }
+        assert_eq!(w.units[0].position(), start, "moved while turning");
+    }
+    assert_eq!(w.units[0].facing, 0);
 }
 
 #[test]
 fn units_go_around_a_wall() {
-    // a wall across x = 3 tiles, from y = 0 to 9, with a gap below
-    let terrain = open().with_blocked((0..10).map(|y| (3, y)));
-    let target = Vec2::new(6 * T + T / 2, T / 2);
-    let mut w = step(&world(), &terrain, &[move_to(target.x, target.y)]);
-    for _ in 0..400 {
-        let (tx, ty) = Terrain::tile_of(w.units[0].pos);
-        assert!(terrain.passable(tx, ty), "drove through the wall at {tx},{ty}");
-        w = step(&w, &terrain, &[]);
+    // a wall across x = 15, y = 5..30, the goal behind it
+    let wall: Vec<(i32, i32)> = (5..30).map(|y| (15, y)).collect();
+    let r = rules(Grid::open(64, 64).with_blocked(wall.clone(), 0xf));
+    let mut w = step(&one_tank((10, 15), 0), &r, &[move_to(20, 15)]);
+    for _ in 0..3000 {
+        w = step(&w, &r, &[]);
+        let c = w.units[0].cell;
+        assert!(!wall.contains(&(c.0 as i32, c.1 as i32)), "drove into the wall at {c:?}");
+        if w.units[0].order == Order::Idle {
+            break;
+        }
     }
-    assert_eq!(w.units[0].pos, target);
+    assert_eq!(w.units[0].cell, (20, 15));
 }
 
 #[test]
-fn a_blocked_destination_stops_at_the_closest_free_tile() {
-    let terrain = open().with_blocked((5..10).flat_map(|x| (5..10).map(move |y| (x, y))));
-    let w = run(world(), &terrain, 300, &[move_to(7 * T, 7 * T)]);
-    let (tx, ty) = Terrain::tile_of(w.units[0].pos);
-    assert!(terrain.passable(tx, ty));
-    assert!((4..=10).contains(&tx) && (4..=10).contains(&ty), "{tx},{ty}");
-}
-
-#[test]
-fn an_unreachable_destination_is_ignored() {
-    // the tank is boxed in
-    let terrain = open().with_blocked([(1, 0), (0, 1), (1, 1)]);
-    let w = step(&world(), &terrain, &[move_to(50 * T, 50 * T)]);
+fn an_unreachable_goal_is_given_up() {
+    // the goal is walled in on every side
+    let mut walls = Vec::new();
+    for i in 25..=35 {
+        walls.extend([(i, 25), (i, 35), (25, i), (35, i)]);
+    }
+    let r = rules(Grid::open(64, 64).with_blocked(walls, 0xf));
+    let w = run(one_tank((10, 10), 0), &r, 3000, &[move_to(30, 30)]);
     assert_eq!(w.units[0].order, Order::Idle);
+    assert_ne!(w.units[0].cell, (30, 30));
 }
 
 #[test]
-fn move_targets_are_clamped_to_the_map() {
-    let w = run(world(), &open(), 20, &[move_to(-5000, -5000)]);
-    assert_eq!(w.units[0].pos, Vec2::new(0, 0));
-}
-
-#[test]
-fn same_commands_give_the_same_world() {
-    let terrain = open().with_blocked((0..20).map(|y| (5, y)));
-    let cmds = [move_to(12345, 6789)];
-    assert_eq!(run(world(), &terrain, 37, &cmds), run(world(), &terrain, 37, &cmds));
-}
-
-#[test]
-fn step_does_not_touch_its_input() {
-    let before = world();
-    let _ = step(&before, &open(), &[move_to(500, 500)]);
-    assert_eq!(before, world());
-}
-
-#[test]
-fn a_group_spreads_around_the_target() {
-    use openstrike_sim::{FORMATION_SPACING, formation};
-    let places = formation(Vec2::new(1000, 1000), 9);
-    assert_eq!(places[0], Vec2::new(1000, 1000));
-    let mut unique = places.clone();
-    unique.sort_by_key(|p| (p.x, p.y));
-    unique.dedup();
-    assert_eq!(unique.len(), 9);
-    assert!(places.iter().all(|p| (p.x - 1000).abs() <= FORMATION_SPACING && (p.y - 1000).abs() <= FORMATION_SPACING));
-}
-
-#[test]
-fn group_moves_send_each_unit_to_its_own_place() {
-    let units: Vec<Unit> = (1..=4).map(|i| Unit { id: UnitId(i), pos: Vec2::new(i as i32 * T, T / 2), ..tank(0, 0) }).collect();
-    let w = World::new(Vec2::new(4096 * SUBPIXEL, 4096 * SUBPIXEL), units);
-    let ids = vec![UnitId(3), UnitId(1), UnitId(4), UnitId(2)];
-    let mut w = step(&w, &open(), &[Command::MoveGroup { units: ids, to: Vec2::new(40 * T, 40 * T) }]);
-    for _ in 0..1000 {
-        w = step(&w, &open(), &[]);
+fn two_units_never_share_a_cell() {
+    let r = open();
+    let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (20, 10), 16)];
+    let mut w = step(&World::new(units, 7), &r, &[move_to(20, 10), Command::Move { unit: UnitId(2), to: (10, 10) }]);
+    for _ in 0..1500 {
+        w = step(&w, &r, &[]);
+        assert_ne!(w.units[0].cell, w.units[1].cell);
     }
-    let mut ends: Vec<Vec2> = w.units.iter().map(|u| u.pos).collect();
-    assert!(w.units.iter().all(|u| u.order == Order::Idle));
-    ends.sort_by_key(|p| (p.x, p.y));
-    ends.dedup();
-    assert_eq!(ends.len(), 4, "units stacked on the same spot");
+}
+
+#[test]
+fn occupancy_follows_the_units() {
+    let r = open();
+    let w = run(one_tank((10, 10), 0), &r, 300, &[move_to(16, 13)]);
+    let held: Vec<usize> = (0..w.occupancy.len()).filter(|&i| w.occupancy[i] != 0).collect();
+    assert_eq!(held, vec![13 * 256 + 16]);
+    assert_eq!(w.occupancy[13 * 256 + 16], 0x1111_1111);
+}
+
+#[test]
+fn the_same_commands_give_the_same_world() {
+    let r = open();
+    let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (12, 10), 0)];
+    let cmd = [Command::MoveGroup { units: vec![UnitId(1), UnitId(2)], to: (30, 30) }];
+    let a = run(World::new(units.clone(), 3), &r, 400, &cmd);
+    let b = run(World::new(units, 3), &r, 400, &cmd);
+    assert_eq!(a, b);
+}
+
+#[test]
+fn a_path_is_planned_the_tick_after_the_order() {
+    let r = open();
+    let w = step(&one_tank((10, 10), 0), &r, &[move_to(13, 10)]);
+    // the unit stood still, asked for a path, and the scheduler planned it in the same tick
+    assert_eq!(w.units[0].path.status, PathStatus::Ready);
+    assert_eq!(w.units[0].path.remaining(), vec![0, 0, 0]);
 }

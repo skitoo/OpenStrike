@@ -3,7 +3,7 @@ use openstrike::selection::{select, unit_at, units_in};
 use openstrike_sim::UnitId;
 
 fn view(id: u32, x: i32, y: i32) -> UnitView {
-    UnitView { id: UnitId(id), kind: "t-26".into(), screen: (x, y), frame: 0 }
+    UnitView { id: UnitId(id), kind: 0, screen: (x, y), frame: 0, turret_frame: 0 }
 }
 
 #[test]
