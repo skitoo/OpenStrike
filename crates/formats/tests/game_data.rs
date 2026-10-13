@@ -135,3 +135,22 @@ fn bridges_have_four_states() {
     assert_eq!(bridge.states[0][0].image, bridge.states[3][0].image);
     assert_ne!(bridge.states[0][2].image, bridge.states[3][2].image);
 }
+
+#[test]
+fn trees_stands_and_houses_have_their_states() {
+    use openstrike_formats::objects::{self, Layer, map_state};
+    let Some(dir) = data_dir() else { return };
+    let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
+    let pals = |n: &str| Palette::parse_many(&summer.read(&format!("{n}.pl")).unwrap().unwrap()).unwrap();
+    let trees = objects::load_set("tree", &summer.read("tree.rs2").unwrap().unwrap(), &pals("tree")).unwrap();
+    // a standing tree, and the same tree down: its shadow and the fallen trunk on the ground
+    assert_eq!(trees.frames[0].states.len(), 2);
+    let down: Vec<Layer> = trees.frames[0].parts(1).iter().map(|p| p.layer).collect();
+    assert!(down.contains(&Layer::Flat) && !down.contains(&Layer::Upright), "{down:?}");
+    let houses = objects::load_set("dom", &summer.read("houses.rs2").unwrap().unwrap(), &[]).unwrap();
+    assert!(houses.frames.iter().filter(|f| !f.states.is_empty()).all(|f| f.states.len() == 4));
+    assert_eq!(map_state("stand", 3), 1);
+    assert_eq!(map_state("tree", 1), 1);
+    assert_eq!(map_state("dom", 2), 2);
+    assert_eq!(map_state("zabor", 2), 0);
+}

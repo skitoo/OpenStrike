@@ -155,9 +155,10 @@ fn slot_table(name: &str) -> Option<usize> {
     }
 }
 
-/// Intact sprites from the slot table: (offset, layer) for slots 0, 2 and 4.
-fn slotted_sprites(frame: &[u8], table: usize) -> Vec<(usize, Layer)> {
-    [(0, Layer::Upright), (2, Layer::Shadow), (4, Layer::Flat)]
+/// Sprites of `state` (0 or 1) from the slot table: (offset, layer) for slots `state`, `2 + state` and
+/// `4 + state`, as the original draws them (`Game_Dll.dll` `0x100551a0` for `stand`, `0x10055e01` for trees).
+fn slotted_sprites(frame: &[u8], table: usize, state: usize) -> Vec<(usize, Layer)> {
+    [(state, Layer::Upright), (2 + state, Layer::Shadow), (4 + state, Layer::Flat)]
         .into_iter()
         .filter_map(|(slot, layer)| {
             let at = crate::reader::u32_at(frame, table + 4 * slot).ok()? as usize;
@@ -166,31 +167,39 @@ fn slotted_sprites(frame: &[u8], table: usize) -> Vec<(usize, Layer)> {
         .collect()
 }
 
-/// Sprites up to and including the `shadows`-th shadow (only the first sprite if there is none).
-fn intact_sprites(frame: &[u8], start: usize, shadows: usize) -> Vec<(usize, u8)> {
-    let mut found = Vec::new();
-    let mut seen = 0;
+/// Drawing state of an object from its map state byte (`Object::extra[0]`), per set, as the original
+/// builds its objects: `stand` is destroyed when the byte is not zero (`Game_Dll.dll` `0x10054b61`),
+/// trees use its low bit (`0x100560e5`), houses (`0x100500c0`) and bridges use it as is (0 to 3).
+/// Other sets are always drawn intact.
+pub fn map_state(set: &str, extra0: u8) -> usize {
+    match set.to_ascii_lowercase().as_str() {
+        "stand" => (extra0 != 0) as usize,
+        "tree" => (extra0 & 1) as usize,
+        "dom" | "most" => (extra0 & 3) as usize,
+        _ => 0,
+    }
+}
+
+/// The sprites of a frame from `start`, cut into groups that each end with a shadow; sprites after
+/// the last shadow form a last group.
+fn sprite_groups(frame: &[u8], start: usize) -> Vec<Vec<(usize, u8)>> {
+    let mut groups = vec![Vec::new()];
     let mut at = start;
     while at + 9 <= frame.len() {
         match sprite::frame_len(frame, at) {
             Some(len) => {
                 let kind = frame[at + 8];
-                found.push((at, kind));
+                groups.last_mut().unwrap().push((at, kind));
                 if kind == KIND_SHADOW {
-                    seen += 1;
-                    if seen == shadows {
-                        return found;
-                    }
+                    groups.push(Vec::new());
                 }
                 at += len;
             }
             None => at += 1,
         }
     }
-    if seen == 0 {
-        found.truncate(1);
-    }
-    found
+    groups.retain(|g| !g.is_empty());
+    groups
 }
 
 /// Decode the intact state of every frame of a set. `palettes` (the set's `.pl`) is required unless
@@ -230,10 +239,14 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
             {
                 return ObjectFrame { states };
             }
-            let sprites: Vec<(usize, Layer)> = match slot_table(name) {
-                Some(table) => slotted_sprites(frame, table),
-                // a bridge without a readable state table: abutments then deck, each with a shadow
-                None => intact_sprites(frame, start, if name.eq_ignore_ascii_case("most") { 2 } else { 1 })
+            let decode = |sprites: Vec<(usize, Layer)>| -> Vec<Part> {
+                sprites
+                    .into_iter()
+                    .filter_map(|(at, layer)| Some(Part { layer, image: sprite::decode(&frame[at..], &pal).ok()? }))
+                    .collect()
+            };
+            let layered = |group: Vec<(usize, u8)>| -> Vec<(usize, Layer)> {
+                group
                     .into_iter()
                     .map(|(at, kind)| {
                         let layer = match kind {
@@ -244,13 +257,27 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
                         };
                         (at, layer)
                     })
-                    .collect(),
+                    .collect()
             };
-            let intact: Vec<Part> = sprites
-                .into_iter()
-                .filter_map(|(at, layer)| Some(Part { layer, image: sprite::decode(&frame[at..], &pal).ok()? }))
-                .collect();
-            ObjectFrame { states: if intact.is_empty() { Vec::new() } else { vec![intact] } }
+            let states: Vec<Vec<Part>> = if let Some(table) = slot_table(name) {
+                (0..2).map(|s| decode(slotted_sprites(frame, table, s))).collect()
+            } else {
+                let mut groups = sprite_groups(frame, start);
+                if name.eq_ignore_ascii_case("dom") {
+                    // a house: one group per state, 4 states (left half, right half, ground, shadow)
+                    groups.into_iter().take(4).map(|g| decode(layered(g))).collect()
+                } else if name.eq_ignore_ascii_case("most") {
+                    // a bridge without a readable state table: abutments then deck, each with a shadow
+                    let both: Vec<_> = groups.into_iter().take(2).flatten().collect();
+                    vec![decode(layered(both))]
+                } else {
+                    let first = groups.drain(..).next().unwrap_or_default();
+                    let has_shadow = first.last().is_some_and(|&(_, k)| k == KIND_SHADOW);
+                    vec![decode(layered(if has_shadow { first } else { first.into_iter().take(1).collect() }))]
+                }
+            };
+            let states = if states.first().is_some_and(|s| !s.is_empty()) { states } else { Vec::new() };
+            ObjectFrame { states }
         })
         .collect();
     Ok(ObjectSet { frames, footprints, bridges })

@@ -167,9 +167,10 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
 
 `Object::extra[0]` is the object's state in the map (0 = intact). Seen on all single-player maps: houses 0-3
 (1,649 damaged), trees 0-1 (3,092 down), `stand` 0-1, `lay` 0-1, bridges 0-3; fences use both bytes differently
-(unknown). Only bridge states are drawn so far; other objects are drawn intact whatever their state.
+(unknown). Bridges, houses, trees and `stand` objects are drawn in their stored state (`objects::map_state`); other sets are
+drawn intact.
 
-Rules read in `Game_Dll.dll` (not implemented yet):
+Rules read in `Game_Dll.dll`:
 - `stand` (record builder `0x10054b61`): `extra[0] != 0` gives state 1; the draw routine (`0x100551a0`) uses slot
   `state` for the colour sprite (layer 7), `2 + state` for the shadow (layer 6), `4 + state` for the ground sprite.
   `stand` frames also carry a 14x14 footprint grid at byte 9 (before the slot table at 205); the routines
@@ -177,7 +178,8 @@ Rules read in `Game_Dll.dll` (not implemented yet):
 - Trees (builder `0x100560e5`, draw `0x10055e01`): state = `extra[0] & 1`, same slot rule from byte 5.
 - Houses: each placed house becomes an instance (`0x100500c0`, called from `0x10050dae`) with type = object frame and
   state = `extra[0]` (0-3); the draw routine (`0x100511d0`) takes per state four sprites (left half, right half,
-  ground, shadow). At run time the state follows the hit points (`0x10050890`: thresholds from the HP values of
+  ground, shadow). In the files, every one of the 113 summer houses has exactly 4 sprite groups ending with a shadow,
+  one per state (some groups lack a half, or are only ground + shadow: a ruin). At run time the state follows the hit points (`0x10050890`: thresholds from the HP values of
   `land/dom`, one per state). The house footprint rule (bit 0x01, origin 6) is confirmed by the data (all 4,245
   solid tiles are blocked in the map) but its routine has not been read yet.
 

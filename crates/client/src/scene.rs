@@ -2,7 +2,7 @@
 
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::Map;
-use openstrike_formats::objects::{Layer, ObjectSet};
+use openstrike_formats::objects::{Layer, ObjectSet, map_state};
 use openstrike_sim::{Direction, SUBPIXEL, UnitId, World};
 
 /// One part of a map object, in screen pixels.
@@ -29,7 +29,8 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
     for o in &map.objects {
         let (set, frame) = (o.set as usize, o.frame as usize);
         let Some(object) = sets.get(set).and_then(|s| s.frames.get(frame)) else { continue };
-        let state = object.resolve(o.extra[0] as usize);
+        let name = map.object_sets.get(set).map_or("", String::as_str);
+        let state = object.resolve(map_state(name, o.extra[0]));
         let screen = proj.to_screen(o.x as i32, o.y as i32);
         for (part, p) in object.parts(state).iter().enumerate() {
             let item = ObjectPart { screen, set, frame, state, part };
