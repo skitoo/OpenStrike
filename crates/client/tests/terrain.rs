@@ -19,7 +19,7 @@ fn data_dir() -> Option<PathBuf> {
 fn tanks_can_cross_the_rhine_bridges() {
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
-    let a = assets::load(&dir, &map_path, "summer", "t-26").unwrap();
+    let a = assets::load(&dir, &map_path, "summer", &["t-26"]).unwrap();
     let t = terrain::build(&a.map, &a.object_sets);
     let most = a.map.object_sets.iter().position(|n| n == "most").unwrap();
     let mut crossings = 0;
@@ -42,4 +42,14 @@ fn tanks_can_cross_the_rhine_bridges() {
         crossings += 1;
     }
     assert!(crossings >= 4, "{crossings} bridges crossed");
+}
+
+#[test]
+fn the_platoon_loads() {
+    let Some(dir) = data_dir() else { return };
+    let map_path = dir.join("Maps/single/'Act of Sabotage'.ssm");
+    let names = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherm-5"];
+    let a = assets::load(&dir, &map_path, "summer", &names).unwrap();
+    let loaded: Vec<&str> = a.vehicles.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(loaded, names);
 }

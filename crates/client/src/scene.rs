@@ -3,7 +3,7 @@
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::Map;
 use openstrike_formats::objects::{Layer, ObjectSet};
-use openstrike_sim::{Direction, SUBPIXEL, World};
+use openstrike_sim::{Direction, SUBPIXEL, UnitId, World};
 
 /// One part of a map object, in screen pixels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -42,8 +42,10 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
 }
 
 /// A unit as drawn: screen position and the sprite frame of its heading.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitView {
+    pub id: UnitId,
+    pub kind: String,
     pub screen: (i32, i32),
     pub frame: usize,
 }
@@ -63,6 +65,8 @@ pub fn units(world: &World, proj: &Projection) -> Vec<UnitView> {
         .units
         .iter()
         .map(|u| UnitView {
+            id: u.id,
+            kind: u.kind.clone(),
             screen: proj.to_screen(u.pos.x / SUBPIXEL, u.pos.y / SUBPIXEL),
             frame: frame_for(u.facing),
         })

@@ -4,4 +4,5 @@
 pub mod assets;
 pub mod camera;
 pub mod scene;
+pub mod selection;
 pub mod terrain;

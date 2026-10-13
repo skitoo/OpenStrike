@@ -29,7 +29,8 @@ pub struct Assets {
     pub rhomb_palettes: Vec<Palette>,
     /// One per entry of `map.object_sets`; empty when the set could not be loaded.
     pub object_sets: Vec<ObjectSet>,
-    pub tank: VehicleSprites,
+    /// Sprites per vehicle name, for the vehicles that could be loaded.
+    pub vehicles: Vec<(String, VehicleSprites)>,
 }
 
 pub const CLIMATES: [&str; 4] = ["beach", "desert", "summer", "winter"];
@@ -99,7 +100,7 @@ fn object_set(vfs: &Vfs, name: &str) -> Result<ObjectSet, Error> {
     Ok(objects::load_set(name, &rs2, &palettes).unwrap_or_default())
 }
 
-pub fn load(data_dir: &Path, map_path: &Path, climate: &str, tank: &str) -> Result<Assets, Error> {
+pub fn load(data_dir: &Path, map_path: &Path, climate: &str, vehicles: &[&str]) -> Result<Assets, Error> {
     let vfs = mount(data_dir, climate)?;
     let map = map::parse(&std::fs::read(map_path)?)?;
     let object_sets = map.object_sets.iter().map(|n| object_set(&vfs, n)).collect::<Result<_, _>>()?;
@@ -108,7 +109,7 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: &str, tank: &str) -> Resu
         rhombs: vfs.require("mappic.rs2")?,
         rhomb_palettes: Palette::parse_many(&vfs.require("rhomb.pl")?)?,
         object_sets,
-        tank: vehicle(&vfs, tank)?,
+        vehicles: vehicles.iter().filter_map(|n| vehicle(&vfs, n).ok().map(|v| (n.to_string(), v))).collect(),
         map,
     })
 }

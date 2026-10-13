@@ -8,15 +8,16 @@ use std::path::PathBuf;
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
 use openstrike_sim::terrain::TILE;
-use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Terrain, Unit, UnitId, Vec2, World, path, step};
+use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Terrain, Unit, UnitId, Vec2, World, formation, step};
 use raylib::prelude::*;
 
 use openstrike::assets::{self, Assets};
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
-use openstrike::terrain;
+use openstrike::{selection, terrain};
 
-const TANK: UnitId = UnitId(1);
+/// The demo platoon, by sprite name; vehicles that fail to load are skipped.
+const PLATOON: [&str; 6] = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherm-5"];
 const SCREENSHOT_FRAMES: u32 = 200;
 /// Ground texture tiles, in screen pixels.
 const CHUNK: i32 = 512;
@@ -122,6 +123,12 @@ fn draw_unit<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: 
     draw_sprite(d, &tank.turret[u.frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
 }
 
+fn draw_unit_shadow<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: Rect) {
+    let mount = tank.mounts.get(u.frame).copied().unwrap_or_default();
+    draw_sprite(d, &tank.hull_shadow[u.frame], u.screen, view);
+    draw_sprite(d, &tank.turret_shadow[u.frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
+}
+
 fn read_input(rl: &RaylibHandle) -> CameraInput {
     let key = |k| if rl.is_key_down(k) { 1.0 } else { 0.0 };
     let scroll = (
@@ -138,25 +145,43 @@ fn read_input(rl: &RaylibHandle) -> CameraInput {
     CameraInput { scroll, drag, zoom_steps: rl.get_mouse_wheel_move(), zoom_anchor: (m.x, m.y) }
 }
 
-/// The tank starts on the free tile closest to the middle of the map.
+/// The platoon starts in formation on free tiles around the middle of the map.
 fn initial_world(assets: &Assets, terrain: &Terrain) -> World {
     let (w, h) = assets.map.pixel_size();
-    let middle = Terrain::tile_of(Vec2::new(w as i32 / 2 * SUBPIXEL, h as i32 / 2 * SUBPIXEL));
-    let start = path::nearest_passable(terrain, middle).unwrap_or(middle);
-    let tank = Unit {
-        id: TANK,
-        kind: "t-26".into(),
-        pos: Terrain::centre(start.0, start.1),
-        facing: Direction(0),
-        speed: 3 * SUBPIXEL,
-        order: Order::Idle,
-    };
-    World::new(Vec2::new(w as i32 * SUBPIXEL, h as i32 * SUBPIXEL), vec![tank])
+    let middle = Vec2::new(w as i32 / 2 * SUBPIXEL, h as i32 / 2 * SUBPIXEL);
+    let names: Vec<&String> = assets.vehicles.iter().map(|(n, _)| n).collect();
+    let mut taken = Vec::new();
+    let units = formation(middle, names.len())
+        .into_iter()
+        .zip(names)
+        .enumerate()
+        .map(|(i, (place, name))| {
+            // first free tile around the place that no other unit took
+            let wanted = Terrain::tile_of(place);
+            let tile = (0..64)
+                .flat_map(|r| (-r..=r).flat_map(move |dy| (-r..=r).map(move |dx| (wanted.0 + dx, wanted.1 + dy))))
+                .find(|&(x, y)| terrain.passable(x, y) && !taken.contains(&(x, y)))
+                .unwrap_or(wanted);
+            taken.push(tile);
+            Unit {
+                id: UnitId(i as u32 + 1),
+                kind: name.clone(),
+                pos: Terrain::centre(tile.0, tile.1),
+                facing: Direction(0),
+                speed: 3 * SUBPIXEL,
+                order: Order::Idle,
+            }
+        })
+        .collect();
+    World::new(Vec2::new(w as i32 * SUBPIXEL, h as i32 * SUBPIXEL), units)
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = options();
-    let assets = assets::load(&opts.data, &opts.map, &opts.climate, "t-26")?;
+    let assets = assets::load(&opts.data, &opts.map, &opts.climate, &PLATOON)?;
+    if assets.vehicles.is_empty() {
+        return Err("no vehicle could be loaded".into());
+    }
     let proj = assets.projection;
     let (screen_w, screen_h) = proj.screen_size();
     let objects = scene::objects(&assets.map, &proj, &assets.object_sets);
@@ -166,13 +191,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let (mut rl, thread) = raylib::init().size(1280, 800).title("OpenStrike").resizable().build();
     rl.set_target_fps(60);
 
-    let tank = TankTextures {
-        hull: upload_strip(&mut rl, &thread, &assets.tank.hull),
-        hull_shadow: upload_strip(&mut rl, &thread, &assets.tank.hull_shadow),
-        turret: upload_strip(&mut rl, &thread, &assets.tank.turret),
-        turret_shadow: upload_strip(&mut rl, &thread, &assets.tank.turret_shadow),
-        mounts: assets.tank.mounts.clone(),
-    };
+    let vehicles: HashMap<String, TankTextures> = assets
+        .vehicles
+        .iter()
+        .map(|(name, v)| {
+            let textures = TankTextures {
+                hull: upload_strip(&mut rl, &thread, &v.hull),
+                hull_shadow: upload_strip(&mut rl, &thread, &v.hull_shadow),
+                turret: upload_strip(&mut rl, &thread, &v.turret),
+                turret_shadow: upload_strip(&mut rl, &thread, &v.turret_shadow),
+                mounts: v.mounts.clone(),
+            };
+            (name.clone(), textures)
+        })
+        .collect();
     // textures of the object parts this map uses
     let mut part_textures: HashMap<(usize, usize), Vec<SpriteTexture>> = HashMap::new();
     for o in objects.flat.iter().chain(&objects.shadows).chain(&objects.upright) {
@@ -184,13 +216,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
 
     let mut world = initial_world(&assets, &terrain);
-    let tank_start = world.unit(TANK).map(|u| u.pos).unwrap_or_default();
-    let (lx, ly) = opts.look_at.unwrap_or((tank_start.x / SUBPIXEL, tank_start.y / SUBPIXEL));
+    let first = world.units[0].pos;
+    let (lx, ly) = opts.look_at.unwrap_or((first.x / SUBPIXEL, first.y / SUBPIXEL));
     let (tx, ty) = proj.to_screen(lx, ly);
     let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
+    let mut selected: Vec<UnitId> = Vec::new();
+    let mut press: Option<(f32, f32)> = None;
     let mut pending: Vec<Command> = Vec::new();
     if opts.screenshot.is_some() {
-        pending.push(Command::Move { unit: TANK, to: tank_start + Vec2::new(-165 * SUBPIXEL, 325 * SUBPIXEL) });
+        selected = world.units.iter().map(|u| u.id).collect();
+        pending.push(Command::MoveGroup { units: selected.clone(), to: first + Vec2::new(-165 * SUBPIXEL, 325 * SUBPIXEL) });
     }
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
@@ -200,11 +235,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let dt = rl.get_frame_time().min(0.25);
         let screen = (rl.get_screen_width() as f32, rl.get_screen_height() as f32);
         cam = camera::update(cam, &read_input(&rl), dt, (screen_w as f32, screen_h as f32), screen);
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) {
-            let m = rl.get_mouse_position();
-            let (sx, sy) = cam.screen_to_map(m.x, m.y);
-            let (x, y) = proj.to_map(sx, sy);
-            pending.push(Command::Move { unit: TANK, to: Vec2::new(x as i32 * SUBPIXEL, y as i32 * SUBPIXEL) });
+        let mouse = rl.get_mouse_position();
+        let mouse_world = cam.screen_to_map(mouse.x, mouse.y);
+        let mut units: Vec<UnitView> = scene::units(&world, &proj);
+        units.sort_by_key(|u| u.screen.1);
+
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+            press = Some(mouse_world);
+        }
+        if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT)
+            && let Some(start) = press.take()
+        {
+            let add = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
+            selected = selection::select(&selected, &units, start, mouse_world, add);
+        }
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() {
+            let (x, y) = proj.to_map(mouse_world.0, mouse_world.1);
+            pending.push(Command::MoveGroup { units: selected.clone(), to: Vec2::new(x as i32 * SUBPIXEL, y as i32 * SUBPIXEL) });
         }
         if rl.is_key_pressed(KeyboardKey::KEY_B) {
             show_blocked = !show_blocked;
@@ -215,6 +262,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             pending.clear();
             accumulator -= tick;
         }
+        units = scene::units(&world, &proj);
+        units.sort_by_key(|u| u.screen.1);
 
         let view = view_rect(&cam, screen);
         // rasterise the ground chunks that just came into view
@@ -229,8 +278,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 ground.insert((cx, cy), upload(&mut rl, &thread, CHUNK as u32, CHUNK as u32, &rgba));
             }
         }
-        let mut units: Vec<UnitView> = scene::units(&world, &proj);
-        units.sort_by_key(|u| u.screen.1);
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
@@ -248,27 +295,42 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
             for u in &units {
-                let mount = tank.mounts.get(u.frame).copied().unwrap_or_default();
-                draw_sprite(&mut m, &tank.hull_shadow[u.frame], u.screen, view);
-                draw_sprite(&mut m, &tank.turret_shadow[u.frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
+                draw_unit_shadow(&mut m, &vehicles[&u.kind], u, view);
+            }
+            for u in units.iter().filter(|u| selected.contains(&u.id)) {
+                m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
             }
             // upright objects and units, back to front
             let mut units_left = units.iter().peekable();
             for p in &objects.upright {
                 while let Some(u) = units_left.next_if(|u| u.screen.1 <= p.screen.1) {
-                    draw_unit(&mut m, &tank, u, view);
+                    draw_unit(&mut m, &vehicles[&u.kind], u, view);
                 }
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
             for u in units_left {
-                draw_unit(&mut m, &tank, u, view);
+                draw_unit(&mut m, &vehicles[&u.kind], u, view);
             }
             if show_blocked {
                 draw_blocked(&mut m, &terrain, &proj, view);
             }
+            if let Some(start) = press {
+                let (x0, y0) = (start.0.min(mouse_world.0), start.1.min(mouse_world.1));
+                let (w, h) = ((start.0 - mouse_world.0).abs(), (start.1 - mouse_world.1).abs());
+                if w.max(h) >= selection::CLICK_SLOP {
+                    m.draw_rectangle_lines(x0 as i32, y0 as i32, w as i32, h as i32, Color::LIME);
+                }
+            }
         }
-        d.draw_text("Right click: move   Arrows/WASD or middle drag: scroll   Wheel: zoom   B: blocked tiles", 10, 10, 20, Color::RAYWHITE);
-        d.draw_fps(10, 36);
+        d.draw_text(
+            "Left click / drag: select (Shift adds)   Right click: move   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",
+            10,
+            10,
+            20,
+            Color::RAYWHITE,
+        );
+        d.draw_text(&format!("{} selected", selected.len()), 10, 36, 20, Color::LIME);
+        d.draw_fps(10, 62);
         drop(d);
 
         frame += 1;
