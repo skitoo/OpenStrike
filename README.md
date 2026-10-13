@@ -10,7 +10,7 @@ OpenStrike ships no game data. You need your own copy of *Sudden Strike Gold* (S
 Early engine: a map is drawn in the game's isometric view with its ground, roads, rails, trees, fences and
 buildings, bridges and piers; a platoon of six tanks can be selected and sent around water and buildings,
 moving and finding their way with the original game's rules and path finder.
-File formats are being reverse engineered; see `docs/formats.md` and `docs/movement.md`.
+File formats are being reverse engineered; see `docs/formats.md`, `docs/movement.md` and the address index `docs/original-code.md`.
 
 ## Architecture
 

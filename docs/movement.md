@@ -108,10 +108,28 @@ the units that want one by the scheduler `0x100405c0` after all units moved:
   quarter of the walk) is the end. Then walk back from it: look along 8 rays for the first reached
   cell, step towards the closest, until the start. At most 61 directions are kept.
 
+## Group orders (`0x10060bd0` -> `0x100609c0`)
+
+A move order, even for one unit, goes through the formation helper (state at `0x1005f1e0`):
+
+1. Sum and extent of the selected units' cells (`0x1005f230`); centre = sum / count (truncated).
+2. Mode (`0x1005f290`): spread = `max + min / 2` of the extent; under 21 cells the group keeps its
+   shape, otherwise it is spread (`[0x1029dd60]` bits 2 and 4 can force modes; always 0 as far as
+   read).
+3. Per unit (`0x1005f320`), in selection list order (built by prepending while walking the unit
+   list, `0x10068900`): keeping the shape, the unit goes to its cell plus target minus centre if
+   the cell is allowed (`0x1003e870`: inside the 4-cell border, quarters open, bit 14 clear, no unit
+   in it now, no known mine). Otherwise a spiral over a 32 x 32 slot grid centred on the target
+   (slot 15, 15): ring by ring, top row left to right, left column down, bottom row right to left,
+   right column up; a side only advances past allowed cells (a disallowed cell is tested again).
+   A slot holds 4 units' worth; vehicles (type flag `0x20` bit 2, set by `0x100478a0`) take 4, others
+   1. In spread mode every slot with an odd row or column is filled first, so units land 2 cells
+   apart and the target's own slot is skipped. Nothing found: the target itself.
+4. The order is queued (`0x10032060`, 7-byte records at `[0x100b71e8]`, type `0x41` = move) after
+   clearing the unit's queue (`+0xc0`) unless the selection asks to queue.
+
 ## Not reproduced yet
 
-- How a group order spreads the units (OpenStrike puts them on rings 2 cells apart around the
-  target cell: own rule).
 - Which sprite frame the game draws for a heading (OpenStrike projects the map heading).
 - Crushing objects and mines while driving (`0x1004c710`), engine smoke and sounds, damaged crews,
   immobilised vehicles (layer 1), towing, infantry and other path finder variants (`0x100639d0`,

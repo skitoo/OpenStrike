@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
 use openstrike_sim::grid::{CELL_PX, NO_VEHICLES, QUARTERS};
-use openstrike_sim::{Command, Grid, Rules, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, World, formation, step};
+use openstrike_sim::{Command, Grid, Rules, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, World, step};
 use raylib::prelude::*;
 
 use openstrike::assets;
@@ -100,23 +100,20 @@ fn read_input(rl: &RaylibHandle) -> CameraInput {
     CameraInput { scroll, drag, zoom_steps: rl.get_mouse_wheel_move(), zoom_anchor: (m.x, m.y) }
 }
 
-/// The platoon starts on free cells around the middle of the map, facing east.
+/// The platoon starts on free cells around the middle of the map, two cells apart, facing east.
 fn initial_world(grid: &Grid, count: usize) -> World {
-    let middle = ((grid.width / 2) as i16, (grid.height / 2) as i16);
-    let mut taken: Vec<(i16, i16)> = Vec::new();
-    let units = formation(middle, count)
-        .into_iter()
-        .enumerate()
-        .map(|(i, wanted)| {
-            // first free cell around the place that no other unit took
-            let cell = (0..64i16)
-                .flat_map(|r| (-r..=r).flat_map(move |dy| (-r..=r).map(move |dx| (wanted.0 + dx, wanted.1 + dy))))
-                .find(|&(x, y)| grid.at(x as i32, y as i32) & (QUARTERS | NO_VEHICLES) == 0 && !taken.contains(&(x, y)))
-                .unwrap_or(wanted);
-            taken.push(cell);
-            Unit::new(UnitId(i as u32 + 1), i, cell, 0)
-        })
-        .collect();
+    let (mx, my) = ((grid.width / 2) as i16, (grid.height / 2) as i16);
+    let free = |(x, y): (i16, i16)| grid.at(x as i32, y as i32) & (QUARTERS | NO_VEHICLES) == 0;
+    let cells: Vec<(i16, i16)> = (0..32i16)
+        .flat_map(|r| (-r..=r).flat_map(move |dy| (-r..=r).map(move |dx| (mx + 2 * dx, my + 2 * dy))))
+        .filter(|&c| free(c))
+        .fold(Vec::new(), |mut acc, c| {
+            if !acc.contains(&c) {
+                acc.push(c);
+            }
+            acc
+        });
+    let units = cells.into_iter().take(count).enumerate().map(|(i, cell)| Unit::new(UnitId(i as u32 + 1), i, cell, 0)).collect();
     World::new(units, 0)
 }
 
@@ -195,7 +192,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut pending: Vec<Command> = Vec::new();
     if opts.screenshot.is_some() {
         selected = world.units.iter().map(|u| u.id).collect();
-        pending.push(Command::MoveGroup { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
+        pending.push(Command::Move { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
     }
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
@@ -221,7 +218,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() {
             let (x, y) = proj.to_map(mouse_world.0, mouse_world.1);
-            pending.push(Command::MoveGroup { units: selected.clone(), to: cell_at(x as i32, y as i32) });
+            pending.push(Command::Move { units: selected.clone(), to: cell_at(x as i32, y as i32) });
         }
         if rl.is_key_pressed(KeyboardKey::KEY_B) {
             show_blocked = !show_blocked;

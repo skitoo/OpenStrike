@@ -78,7 +78,7 @@ fn a_tank_crosses_the_rhine() {
     let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
     let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
     let (from, to) = (near(30, 44), near(100, 48));
-    let mut w = step(&World::new(vec![Unit::new(UnitId(1), 0, from, 0)], 0), &rules, &[Command::Move { unit: UnitId(1), to }]);
+    let mut w = step(&World::new(vec![Unit::new(UnitId(1), 0, from, 0)], 0), &rules, &[Command::Move { units: vec![UnitId(1)], to }]);
     let mut seen_east_of_river = false;
     for _ in 0..20_000 {
         w = step(&w, &rules, &[]);

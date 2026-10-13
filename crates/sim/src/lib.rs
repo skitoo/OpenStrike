@@ -254,38 +254,134 @@ impl Unit {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Command {
-    Move { unit: UnitId, to: (i16, i16) },
-    /// Move several units to the same cell: each gets its own cell around it (see [`formation`]).
-    MoveGroup { units: Vec<UnitId>, to: (i16, i16) },
+    /// Move units to a cell, each to its own place around it (see [`group_targets`]).
+    Move { units: Vec<UnitId>, to: (i16, i16) },
 }
 
-/// Cells for `count` units around `to`, 2 cells apart, in rings. NOT the original rule: how the
-/// game spreads a group order is not reverse engineered yet.
-pub fn formation(to: (i16, i16), count: usize) -> Vec<(i16, i16)> {
-    const SPACING: i16 = 2;
-    let mut places = Vec::with_capacity(count);
-    let mut ring = 0i16;
-    while places.len() < count {
-        if ring == 0 {
-            places.push(to);
-        } else {
-            for i in 0..8 * ring {
-                let (side, k) = (i / (2 * ring), i % (2 * ring));
-                let (dx, dy) = match side {
-                    0 => (-ring + k, -ring),
-                    1 => (ring, -ring + k),
-                    2 => (ring - k, ring),
-                    _ => (-ring, ring - k),
-                };
-                places.push((to.0 + dx * SPACING, to.1 + dy * SPACING));
-                if places.len() == count {
-                    break;
+/// Whether a group order may send a unit to a cell (`0x1003e870`, vehicles): inside the border,
+/// all quarters open, no other unit in it now, no known mine.
+fn order_cell_ok(rules: &Rules, occupancy: &[u32], ty: &UnitType, x: i32, y: i32) -> bool {
+    let g = &rules.grid;
+    if x <= 3 || y <= 3 || x >= g.width - 4 || y >= g.height - 4 {
+        return false;
+    }
+    let f = g.at(x, y);
+    if f & grid::QUARTERS != 0 || f & grid::NO_VEHICLES != 0 {
+        return false;
+    }
+    if grid::index(x, y).is_some_and(|i| occupancy[i] & 0xffff != 0) {
+        return false;
+    }
+    let known_mines = 0u32;
+    ty.ignore_mines || known_mines & (f >> 20) & 0xf == 0
+}
+
+/// Where each unit of a group order goes (`0x100609c0` with `0x1005f1e0`, `0x1005f230`,
+/// `0x1005f290`, `0x1005f320`). A group spanning less than 21 cells keeps its shape around the
+/// target; otherwise, or when a unit's place is not allowed, the unit takes the first free slot of
+/// a spiral around the target in a 32 x 32 grid, every other row and column left empty for a spread
+/// group. A vehicle fills a slot (infantry would share it four to a cell). `units` are in the order
+/// of the selection list.
+pub fn group_targets(rules: &Rules, occupancy: &[u32], units: &[&Unit], to: (i16, i16)) -> Vec<(i16, i16)> {
+    let n = units.len() as i32;
+    if n == 0 {
+        return Vec::new();
+    }
+    let (tx, ty) = (to.0 as i32, to.1 as i32);
+    let (mut sx, mut sy) = (0i32, 0i32);
+    let (mut min_x, mut max_x, mut min_y, mut max_y) = (1_000_000, -1_000_000, 1_000_000, -1_000_000);
+    for u in units {
+        let (x, y) = (u.cell.0 as i32, u.cell.1 as i32);
+        sx += x;
+        sy += y;
+        (min_x, max_x, min_y, max_y) = (min_x.min(x), max_x.max(x), min_y.min(y), max_y.max(y));
+    }
+    let (cx, cy) = (sx / n, sy / n);
+    let spread = {
+        let (a, b) = ((min_x - max_x).abs(), (min_y - max_y).abs());
+        if b < a { b / 2 + a } else { a / 2 + b }
+    };
+    let keep_shape = spread < 0x15;
+    let mut slots = [[0u8; 32]; 32];
+    if !keep_shape {
+        for (v, row) in slots.iter_mut().enumerate() {
+            for (u, slot) in row.iter_mut().enumerate() {
+                if (u | v) & 1 != 0 {
+                    *slot = (*slot & 0x84) | 4;
                 }
             }
         }
-        ring += 1;
     }
-    places
+    units
+        .iter()
+        .map(|u| {
+            let t = &rules.types[u.kind];
+            let ok = |x: i32, y: i32| order_cell_ok(rules, occupancy, t, x, y);
+            if keep_shape {
+                let (x, y) = (u.cell.0 as i32 + tx - cx, ty + u.cell.1 as i32 - cy);
+                if ok(x, y) {
+                    return (x as i16, y as i16);
+                }
+            }
+            let (x, y) = spiral_slot(&mut slots, &ok, tx, ty, 4);
+            (x as i16, y as i16)
+        })
+        .collect()
+}
+
+/// First slot around the target with room for `size` (4 fills it), ring by ring: top row left to
+/// right, left column downwards, bottom row right to left, right column upwards. A side only moves
+/// on past cells the unit may go to, as in the game.
+fn spiral_slot(slots: &mut [[u8; 32]; 32], ok: &dyn Fn(i32, i32) -> bool, tx: i32, ty: i32, size: u8) -> (i32, i32) {
+    let fits = |slot: u8| (slot & 0x7f).wrapping_add(size) < 5;
+    let take = |slots: &mut [[u8; 32]; 32], x: i32, y: i32| {
+        let s = &mut slots[y as usize][x as usize];
+        *s = (*s & 0x80) | (s.wrapping_add(size) & 0x7f) | 0x80;
+        (x - 15 + tx, y - 15 + ty)
+    };
+    let (mut low, mut high, mut n) = (15i32, 15i32, 1i32);
+    while low > 0 {
+        let mut x = low;
+        for _ in 0..=n {
+            if ok(x - 15 + tx, low - 15 + ty) {
+                if fits(slots[low as usize][x as usize]) {
+                    return take(slots, x, low);
+                }
+                x += 1;
+            }
+        }
+        let mut y = low;
+        for _ in 0..n {
+            if ok(low - 15 + tx, y - 15 + ty) {
+                if fits(slots[y as usize][low as usize]) {
+                    return take(slots, low, y);
+                }
+                y += 1;
+            }
+        }
+        let mut x = high;
+        for _ in 0..=n {
+            if ok(x - 15 + tx, high - 15 + ty) {
+                if fits(slots[high as usize][x as usize]) {
+                    return take(slots, x, high);
+                }
+                x -= 1;
+            }
+        }
+        let mut y = high;
+        for _ in 0..=n {
+            if ok(high - 15 + tx, y - 15 + ty) {
+                if fits(slots[y as usize][high as usize]) {
+                    return take(slots, high, y);
+                }
+                y -= 1;
+            }
+        }
+        low -= 1;
+        high += 1;
+        n += 2;
+    }
+    (tx, ty)
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -332,23 +428,13 @@ fn stop_moving(unit: &mut Unit) {
 /// Advance the world by one tick.
 pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
     let mut w = world.clone();
-    for c in commands {
-        match c {
-            Command::Move { unit, to } => {
-                if let Some(u) = w.units.iter_mut().find(|u| u.id == *unit) {
-                    order_move(u, *to);
-                }
-            }
-            Command::MoveGroup { units, to } => {
-                let mut ids = units.clone();
-                ids.sort();
-                ids.dedup();
-                for (id, place) in ids.into_iter().zip(formation(*to, units.len())) {
-                    if let Some(u) = w.units.iter_mut().find(|u| u.id == id) {
-                        order_move(u, place);
-                    }
-                }
-            }
+    for Command::Move { units, to } in commands {
+        // the selection list is built by prepending while walking the unit list (`0x10068900`)
+        let group: Vec<usize> = (0..w.units.len()).rev().filter(|&i| units.contains(&w.units[i].id)).collect();
+        let members: Vec<&Unit> = group.iter().map(|&i| &w.units[i]).collect();
+        let places = group_targets(rules, &w.occupancy, &members, *to);
+        for (i, place) in group.into_iter().zip(places) {
+            order_move(&mut w.units[i], place);
         }
     }
     for i in 0..w.units.len() {

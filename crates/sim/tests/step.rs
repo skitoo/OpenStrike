@@ -1,5 +1,5 @@
 use openstrike_sim::grid::{DIRS, STOP};
-use openstrike_sim::{Command, Grid, Order, PathStatus, Rules, Unit, UnitId, UnitType, World, step};
+use openstrike_sim::{Command, Grid, Order, PathStatus, Rules, Unit, UnitId, UnitType, World, group_targets, step};
 
 /// Curves shaped like the game's: one point on the edge the unit enters by, the stop point at
 /// (15, 15) px, nothing for "stopped to stopped".
@@ -47,7 +47,7 @@ fn one_tank(cell: (i16, i16), facing: u8) -> World {
 }
 
 fn move_to(x: i16, y: i16) -> Command {
-    Command::Move { unit: UnitId(1), to: (x, y) }
+    Command::Move { units: vec![UnitId(1)], to: (x, y) }
 }
 
 #[test]
@@ -139,7 +139,7 @@ fn an_unreachable_goal_is_given_up() {
 fn two_units_never_share_a_cell() {
     let r = open();
     let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (20, 10), 16)];
-    let mut w = step(&World::new(units, 7), &r, &[move_to(20, 10), Command::Move { unit: UnitId(2), to: (10, 10) }]);
+    let mut w = step(&World::new(units, 7), &r, &[move_to(20, 10), Command::Move { units: vec![UnitId(2)], to: (10, 10) }]);
     for _ in 0..1500 {
         w = step(&w, &r, &[]);
         assert_ne!(w.units[0].cell, w.units[1].cell);
@@ -159,7 +159,7 @@ fn occupancy_follows_the_units() {
 fn the_same_commands_give_the_same_world() {
     let r = open();
     let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (12, 10), 0)];
-    let cmd = [Command::MoveGroup { units: vec![UnitId(1), UnitId(2)], to: (30, 30) }];
+    let cmd = [Command::Move { units: vec![UnitId(1), UnitId(2)], to: (30, 30) }];
     let a = run(World::new(units.clone(), 3), &r, 400, &cmd);
     let b = run(World::new(units, 3), &r, 400, &cmd);
     assert_eq!(a, b);
@@ -172,4 +172,34 @@ fn a_path_is_planned_the_tick_after_the_order() {
     // the unit stood still, asked for a path, and the scheduler planned it in the same tick
     assert_eq!(w.units[0].path.status, PathStatus::Ready);
     assert_eq!(w.units[0].path.remaining(), vec![0, 0, 0]);
+}
+
+#[test]
+fn a_tight_group_keeps_its_shape() {
+    // 3 tanks in a row, ordered 20 cells down: each keeps its offset from the group's centre
+    let r = open();
+    let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (12, 10), 0), Unit::new(UnitId(3), 0, (14, 10), 0)];
+    let w = World::new(units, 0);
+    let members: Vec<&Unit> = w.units.iter().collect();
+    assert_eq!(group_targets(&r, &w.occupancy, &members, (30, 30)), vec![(28, 30), (30, 30), (32, 30)]);
+}
+
+#[test]
+fn a_spread_group_gathers_on_every_other_cell() {
+    // 30 cells apart: odd rows and columns of the slot grid are left empty, and the target's own
+    // slot (15, 15) is odd, so the spiral starts on the ring around it
+    let r = open();
+    let units = vec![Unit::new(UnitId(1), 0, (5, 5), 0), Unit::new(UnitId(2), 0, (40, 40), 0), Unit::new(UnitId(3), 0, (5, 40), 0)];
+    let w = World::new(units, 0);
+    let members: Vec<&Unit> = w.units.iter().collect();
+    assert_eq!(group_targets(&r, &w.occupancy, &members, (30, 30)), vec![(29, 29), (31, 29), (29, 31)]);
+}
+
+#[test]
+fn a_place_held_by_another_unit_is_moved_along_the_spiral() {
+    // the target cell holds a unit: the ordered one goes to the first free cell of the spiral
+    let r = open();
+    let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (30, 30), 0)];
+    let w = World::new(units, 0);
+    assert_eq!(group_targets(&r, &w.occupancy, &[&w.units[0]], (30, 30)), vec![(29, 29)]);
 }
