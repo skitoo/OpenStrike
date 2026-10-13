@@ -38,10 +38,34 @@ pub struct Part {
     pub image: Image,
 }
 
+/// Side of a building footprint grid, in tiles of 16 map pixels.
+pub const FOOTPRINT_SIZE: usize = 14;
+/// Grid cell under the object position. Fitted on the data: it best aligns the solid cells with the
+/// house's ground sprite for 75 of the 113 summer houses (7 for 5 of them, 5 for 31).
+pub const FOOTPRINT_ORIGIN: i32 = 6;
+pub type Footprint = [[u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
+
+/// Footprint cells that block vehicles: bits 0x40 (the building) and 0x04 (its walls).
+/// Inferred from the data: these bits form the solid block, while 0x01-0x03 ring it.
+pub const FOOTPRINT_SOLID: u8 = 0x44;
+
 /// The intact state of every frame of a set; an empty list for empty or undecodable frames.
 #[derive(Debug, Clone, Default)]
 pub struct ObjectSet {
     pub frames: Vec<Vec<Part>>,
+    /// Building footprints (`dom` only), per frame.
+    pub footprints: Vec<Option<Footprint>>,
+}
+
+/// A house frame: 512-byte palette, u16, u32, then the 14x14 footprint grid
+/// (read by the loader at `Game_Dll.dll` `0x10050980`).
+fn house_footprint(frame: &[u8]) -> Option<Footprint> {
+    let raw = frame.get(518..518 + FOOTPRINT_SIZE * FOOTPRINT_SIZE)?;
+    let mut grid = [[0u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
+    for (row, chunk) in grid.iter_mut().zip(raw.as_chunks::<FOOTPRINT_SIZE>().0) {
+        *row = *chunk;
+    }
+    Some(grid)
 }
 
 /// Archive file name (without extension) of a set name used in maps.
@@ -97,7 +121,12 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
     if !own_palette && palettes.is_empty() {
         return Err(Error::Invalid(format!("object set {name} needs a palette")));
     }
-    let frames = sprite::rs2_frames(rs2)?
+    let raw_frames = sprite::rs2_frames(rs2)?;
+    let footprints = raw_frames
+        .iter()
+        .map(|f| if name.eq_ignore_ascii_case("dom") && !f.is_empty() { house_footprint(f) } else { None })
+        .collect();
+    let frames = raw_frames
         .into_iter()
         .map(|frame| {
             let (pal, start) = if own_palette {
@@ -133,5 +162,5 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
                 .collect()
         })
         .collect();
-    Ok(ObjectSet { frames })
+    Ok(ObjectSet { frames, footprints })
 }

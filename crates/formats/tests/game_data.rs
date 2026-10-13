@@ -93,3 +93,16 @@ fn water_cells_are_ground_type_water() {
     // the harbour: about a quarter of the 128x128 cells
     assert!((3000..6000).contains(&water), "{water} water cells");
 }
+
+#[test]
+fn house_footprints_have_a_solid_core() {
+    use openstrike_formats::objects::{self, FOOTPRINT_SOLID};
+    let Some(dir) = data_dir() else { return };
+    let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
+    let set = objects::load_set("dom", &summer.read("houses.rs2").unwrap().unwrap(), &[]).unwrap();
+    let grid = set.footprints[0].unwrap();
+    let solid: usize = grid.iter().flatten().filter(|&&v| v & FOOTPRINT_SOLID != 0).count();
+    assert!((10..60).contains(&solid), "{solid} solid cells");
+    // the centre of the grid is inside the building
+    assert_ne!(grid[6][6] & FOOTPRINT_SOLID, 0);
+}

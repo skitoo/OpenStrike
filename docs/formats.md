@@ -182,6 +182,11 @@ The **6-slot table** (u32 offsets in the frame, 0 = none) is: colour intact, col
 shadow destroyed, ground intact, ground destroyed. A tree's "ground destroyed" is the fallen tree; a sunken barge is
 an empty colour sprite, a shadow and a ground sprite. The intact state is slots 0, 2 and 4.
 
+**House footprints** (`dom`): after the 512-byte palette come a u16, a u32, then a **14x14 grid** (read by the loader
+at `Game_Dll.dll` `0x10050980`, which then reads 8 more bytes and single bytes). Each grid tile is 16x16 map pixels.
+Values 0x40 / 0x04 form the solid building, 0x01-0x03 ring it (inferred). Grid tile (6, 6) is under the object position:
+fitted by aligning the solid tiles with the house's ground sprite (best for 75 of the 113 summer houses).
+
 Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
 Sets without a table: the engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and
 draws every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
