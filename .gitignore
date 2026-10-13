@@ -19,3 +19,7 @@ data/
 
 .DS_Store
 build/
+
+# Python
+__pycache__/
+*.pyc
