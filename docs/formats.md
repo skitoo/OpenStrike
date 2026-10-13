@@ -74,15 +74,22 @@ frame = i16 x0, i16 y0      anchor offset (draw at position + (x0, y0))
         rows[height]: u16 byte length, then commands (top 2 bits = mode, low 6 bits = n)
 ```
 
-| Mode | Colour frames (observed in the blitter) | Shadow frames `0xa3` (inferred) |
-|---|---|---|
-| `0x00 \| n` | copy n palette pixels (`0x100045ab`) | n shadow pixels |
-| `0x40 \| n` | copy n pixels blended 50 % with the background: `(src + dst - ((src ^ dst) & mask)) >> 1` (`0x100045d0`), anti-aliased edges | n lighter shadow pixels (to confirm) |
-| `0x80 \| n` | repeat the next palette pixel n times (`rep stosw`, `0x10004620`) | n transparent pixels |
-| `0xC0 \| n` | skip n transparent pixels | n transparent pixels |
+| Mode | Colour frames (blitter `cad800.dll` `0x100044f5`) |
+|---|---|
+| `0x00 \| n` | copy n palette pixels (`0x100045ab`) |
+| `0x40 \| n` | copy n pixels blended 50 % with the background: `(src + dst - ((src ^ dst) & mask)) >> 1` (`0x100045d0`), anti-aliased edges |
+| `0x80 \| n` | repeat the next palette pixel n times (`0x10004620`) |
+| `0xC0 \| n` | skip n pixels |
+
+Shadow frames (`0xa3`, blitters `0x10007938` and `0x100098db`) use 1-bit modes with 7-bit counts: `0x00 | n` is n
+shadow pixels (n up to 127), `0x80 | n` skips n pixels. Each screen pixel has a 16-bit word (buffer `0x101f2e50`,
+800 x 600, filled with the row's depth `y << 5`): a shadow pixel is drawn only if the word has none of bits
+`0x8007`, then the shadow's flag is set in it and the pixel becomes `((p & 0xf7de) >> 1) + 0x0085` in RGB565 (half
+brightness, +4/63 green, +5/31 blue). So overlapping shadows darken once. Colour sprites drawn later on a pixel whose
+word has bit 1 set are darkened the same way (`0x10004c4b`); which shadows set bit 1 rather than another bit is
+not read yet (the game reaches `cad800.dll` through a table handed over by the executable).
 
 Unit files hold the colour frames first, then the shadows (BRON: 288 frames, shadows from 160, 64 of them).
-The exact shadow strength still has to be read from the shadow blitter.
 
 Not handled yet:
 - `xx 00 00 CA` container (47 files: briefing backgrounds 640x480, menu animations, `d_shadow`);

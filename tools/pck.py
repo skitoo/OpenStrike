@@ -4,7 +4,7 @@
 .pck: u32 offsets[n + 1] (offsets[0] / 4 = n + 1), then n frames.
   (variant: u32 count, then offsets[count]; see frames())
   frame: i16 x0, i16 y0 (anchor offset), u16 width, u16 height, u8 kind
-         kind 0xa1 / 0xa2 / 0xa9: colour sprite; 0xa3: shadow mask (commands carry no colour byte);
+         kind 0xa1 / 0xa2 / 0xa9: colour sprite; 0xa3: shadow mask (0x00|n shadow, 0x80|n skip, n 7 bits);
          0xa5: unknown encoding (258 frames, not handled)
          then per row: u16 byte length, then commands until the row ends:
            0x00 | n  copy n palette pixels
@@ -77,21 +77,20 @@ def decode(frame, palette):
     return x0, y0, w, h, pixels
 
 def decode_shadow(frame):
-    """Shadow mask: same row layout, but commands carry no colour byte.
-    0x00 | n = n shadow pixels, 0x40 | n = n lighter shadow pixels (edges, to confirm in the blitter),
-    0x80 | n and 0xC0 | n = n transparent pixels."""
+    """Shadow mask: same row layout, but commands carry no colour byte (cad800.dll 0x10007938):
+    0x00 | n = n shadow pixels (n up to 127), 0x80 | n = n transparent pixels.
+    The game darkens each pixel once: ((p & 0xf7de) >> 1) + 0x0085 in RGB565."""
     x0, y0, w, h, _ = struct.unpack_from('<hhHHB', frame, 0)
     pos, pixels = 9, [[None] * w for _ in range(h)]
-    strength = {0: 128, 1: 64}
     for y in range(h):
         (length,) = struct.unpack_from('<H', frame, pos)
         line, pos = frame[pos + 2:pos + 2 + length], pos + 2 + length
         x = 0
         for op in line:
-            mode, n = op >> 6, op & 0x3f
-            if mode in strength:
+            n = op & 0x7f
+            if not op & 0x80:
                 for k in range(x, min(x + n, w)):
-                    pixels[y][k] = (0, 0, 0, strength[mode])
+                    pixels[y][k] = (0, 0, 0, 128)
             x += n
     return x0, y0, w, h, pixels
 

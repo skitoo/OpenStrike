@@ -1,16 +1,21 @@
 //! Sprites: `.pck` (units, effects) and `.rs2` (map objects) frame containers.
 //!
-//! Blitter in the original game: `cad800.dll` `0x100044f5`.
+//! Blitters in the original game: `cad800.dll` `0x100044f5` (colour), `0x10007938` and
+//! `0x100098db` (shadows).
 //!
 //! ```text
 //! frame = i16 x0, i16 y0 (anchor), u16 width, u16 height, u8 kind
-//!         rows[height]: u16 byte length, then commands (2-bit mode, 6-bit count n):
-//!           colour frames               shadow frames (kind 0xa3)
-//!   0x00  copy n palette pixels         n shadow pixels
-//!   0x40  copy n pixels, 50 % blend     n lighter shadow pixels
-//!   0x80  repeat next pixel n times     n transparent pixels
-//!   0xC0  skip n pixels                 n transparent pixels
+//!         rows[height]: u16 byte length, then commands
+//!   colour frames (2-bit mode, 6-bit count n)   shadow frames, kind 0xa3 (1-bit mode, 7-bit count n)
+//!   0x00 | n  copy n palette pixels               0x00 | n  n shadow pixels (n up to 127)
+//!   0x40 | n  copy n pixels, 50 % blend           0x80 | n  skip n pixels
+//!   0x80 | n  repeat next pixel n times
+//!   0xC0 | n  skip n pixels
 //! ```
+//!
+//! A shadow pixel darkens what is under it once, however many shadows cover it: the game keeps a
+//! flag per screen pixel and draws `((pixel & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness,
+//! a touch of green and blue), see [`shade`].
 
 use crate::palette::Palette;
 use crate::reader::{Reader, u32_at};
@@ -22,8 +27,13 @@ pub const KIND_UNKNOWN_A5: u8 = 0xa5;
 /// Alpha values used for the decoded pixels.
 pub const ALPHA_OPAQUE: u8 = 255;
 pub const ALPHA_BLEND: u8 = 128;
-pub const ALPHA_SHADOW: u8 = 128;
-pub const ALPHA_SHADOW_EDGE: u8 = 64;
+/// Shadow frames decode to a mask: white, opaque where the shadow is.
+pub const SHADOW_MASK: [u8; 4] = [255, 255, 255, 255];
+
+/// A colour seen through a shadow (`cad800.dll` `0x10007b32`), on RGB565.
+pub fn shade(rgb565: u16) -> u16 {
+    ((rgb565 & 0xf7de) >> 1) + 0x0085
+}
 
 /// A decoded frame as straight RGBA8, with the anchor offset to add to the draw position.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -95,7 +105,7 @@ pub fn frame_len(data: &[u8], at: usize) -> Option<usize> {
         while i < line.len() {
             let op = line[i];
             i += 1;
-            let n = (op & 0x3f) as usize;
+            let n = if kind == KIND_SHADOW { op & 0x7f } else { op & 0x3f } as usize;
             x += n;
             if kind != KIND_SHADOW {
                 i += match op >> 6 {
@@ -138,20 +148,24 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
         };
         while line.pos() < length {
             let op = line.u8()?;
-            let n = (op & 0x3f) as usize;
-            match (op >> 6, shadow) {
-                (3, _) | (2, true) => {}
-                (m, true) => {
-                    let a = if m == 0 { ALPHA_SHADOW } else { ALPHA_SHADOW_EDGE };
-                    (x..x + n).for_each(|i| put(i, [0, 0, 0], a));
+            if shadow {
+                let n = (op & 0x7f) as usize;
+                if op & 0x80 == 0 {
+                    (x..x + n).for_each(|i| put(i, [255, 255, 255], SHADOW_MASK[3]));
                 }
-                (2, false) => {
+                x += n;
+                continue;
+            }
+            let n = (op & 0x3f) as usize;
+            match op >> 6 {
+                3 => {}
+                2 => {
                     let c = line.u8()? as usize;
                     if !palette.transparent[c] {
                         (x..x + n).for_each(|i| put(i, palette.colours[c], ALPHA_OPAQUE));
                     }
                 }
-                (m, false) => {
+                m => {
                     let a = if m == 0 { ALPHA_OPAQUE } else { ALPHA_BLEND };
                     for (i, &c) in line.bytes(n)?.iter().enumerate() {
                         if !palette.transparent[c as usize] {

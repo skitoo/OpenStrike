@@ -189,6 +189,10 @@ none/track/whell), `movespeed` (`+0xb33`, `+0xb37`), `expa_crush` (`+0xb3b`, `+0
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
 | `cad800.dll` `0x100044f5` | sprite RLE blitter; `0x10001c13` colour key `0xF81F` |
+| `cad800.dll` `0x10007938`, `0x100098db` | shadow blitters: 7-bit runs, darken once per pixel, flag in the pixel word |
+| `cad800.dll` `0x101f2e50` | per-pixel word (800 x 600): depth `y << 5` in the high bits, flags in bits 0-2 and 15; `0x100026f0` fills a rectangle with depths, `0x10002790` clears bit 2, `0x10002820` adds to the depths |
+| `cad800.dll` `0x10012b38`, `0x10012b40`, `0x10012b58` | lowest bit of each colour field (`0x0821`), its complement, shadow tint (`0x0085` in RGB565), set from the pixel format at `0x10001150` |
+| `cad800.dll` `0x1001d49c` | table of drawing functions filled by `CADraw_Init` (`+0x28` = shadow blitter) |
 | `QED.EXE` `0x415fa0` | `.ssm` writer |
 | `0x100516e7` | bridge state: quarter open if grid bit `0x10 << state` |
 | `0x100500c0`, `0x100511d0`, `0x10050890` | house instance, drawing (4 groups per state), state from hit points |

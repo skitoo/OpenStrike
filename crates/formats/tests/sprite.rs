@@ -1,5 +1,5 @@
 use openstrike_formats::palette::{Palette, rgb565};
-use openstrike_formats::sprite::{self, ALPHA_BLEND, ALPHA_OPAQUE, ALPHA_SHADOW, ALPHA_SHADOW_EDGE, Image, KIND_SHADOW};
+use openstrike_formats::sprite::{self, ALPHA_BLEND, ALPHA_OPAQUE, Image, KIND_SHADOW, SHADOW_MASK, shade};
 
 fn grey_palette() -> Palette {
     let mut p = Palette::from_rgb565(&[0; 256]);
@@ -51,12 +51,22 @@ fn decodes_all_four_colour_commands() {
 
 #[test]
 fn shadow_commands_carry_no_colour_byte() {
-    let f = frame(KIND_SHADOW, 5, &[&[0x81, 0x02, 0x41, 0xC1]]);
+    // skip 1, 2 shadow pixels, skip 1, then 0x41 = 65 shadow pixels: bit 6 is part of the count
+    let f = frame(KIND_SHADOW, 70, &[&[0x81, 0x02, 0x81, 0x41]]);
     let img = sprite::decode(&f, &grey_palette()).unwrap();
     assert_eq!(pixel(&img, 0, 0)[3], 0);
-    assert_eq!(pixel(&img, 1, 0), [0, 0, 0, ALPHA_SHADOW]);
-    assert_eq!(pixel(&img, 3, 0), [0, 0, 0, ALPHA_SHADOW_EDGE]);
-    assert_eq!(pixel(&img, 4, 0)[3], 0);
+    assert_eq!(pixel(&img, 1, 0), SHADOW_MASK);
+    assert_eq!(pixel(&img, 2, 0), SHADOW_MASK);
+    assert_eq!(pixel(&img, 3, 0)[3], 0);
+    assert_eq!(pixel(&img, 4, 0), SHADOW_MASK);
+    assert_eq!(pixel(&img, 68, 0), SHADOW_MASK);
+    assert_eq!(pixel(&img, 69, 0)[3], 0);
+}
+
+#[test]
+fn shadows_halve_the_colour_and_tint_it() {
+    assert_eq!(shade(0xffff), 0x7bef + 0x0085);
+    assert_eq!(shade(0x0000), 0x0085);
 }
 
 #[test]

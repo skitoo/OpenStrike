@@ -194,6 +194,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         selected = world.units.iter().map(|u| u.id).collect();
         pending.push(Command::Move { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
     }
+    // shadows are drawn into a mask, then applied once per pixel (see `sprite::shade`)
+    let mut shadow_mask: Option<RenderTexture2D> = None;
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
     let mut frame = 0u32;
@@ -243,24 +245,49 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             ground.insert((cx, cy), upload(&mut rl, &thread, CHUNK as u32, CHUNK as u32, &rgba));
         }
 
+        let (sw, sh) = (screen.0 as i32, screen.1 as i32);
+        if shadow_mask.as_ref().is_none_or(|t| t.texture.width != sw || t.texture.height != sh) {
+            shadow_mask = Some(rl.load_render_texture(&thread, sw as u32, sh as u32).expect("shadow mask"));
+        }
+        let mask = shadow_mask.as_mut().unwrap();
+        let camera2d = Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
+        let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
+        {
+            let mut t = rl.begin_texture_mode(&thread, mask);
+            t.clear_background(Color::BLANK);
+            let mut m = t.begin_mode2D(camera2d);
+            for p in &objects.shadows {
+                draw_sprite(&mut m, part(p), p.screen, view);
+            }
+            for u in &units {
+                draw_unit_shadow(&mut m, &vehicles[u.kind], u, view);
+            }
+        }
+
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
         {
-            let target = Vector2::new(cam.x, cam.y);
-            let camera2d = Camera2D { offset: Vector2::zero(), target, rotation: 0.0, zoom: cam.zoom };
             let mut m = d.begin_mode2D(camera2d);
             for ((cx, cy), texture) in &ground {
                 if overlaps(view, cx * CHUNK, cy * CHUNK, CHUNK, CHUNK) {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
             }
-            let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
-            for p in objects.flat.iter().chain(&objects.shadows) {
+            for p in &objects.flat {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
-            for u in &units {
-                draw_unit_shadow(&mut m, &vehicles[u.kind], u, view);
-            }
+        }
+        {
+            // ((pixel & 0xf7de) >> 1) + 0x0085: half, then + 4/63 green and 5/31 blue
+            let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
+            let mut b = d.begin_blend_mode(BlendMode::BLEND_MULTIPLIED);
+            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(128, 128, 128, 255));
+            drop(b);
+            let mut b = d.begin_blend_mode(BlendMode::BLEND_ADDITIVE);
+            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(0, 16, 41, 255));
+        }
+        {
+            let mut m = d.begin_mode2D(camera2d);
             for u in units.iter().filter(|u| selected.contains(&u.id)) {
                 m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
             }
