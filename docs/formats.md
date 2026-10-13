@@ -173,14 +173,18 @@ by a run of sprites in the `.pck` frame format:
 | `trop`, `fre`, `vor`, `pont` | none | one flat sprite (roads, rails, paths) |
 | `lay` | u8, u32 sprite length | one or two flat sprites |
 | `zabor` (fences) | u32 sprite length (loader `0x10056dc0`) | colour, shadow |
-| `tree` | 5 bytes, then 6 u32 sprite offsets, 0 = none (loader `0x10055890`) | standing, shadow, fallen |
-| `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ... | colour, shadow, destroyed |
+| `tree` | 5 bytes, then the 6-slot table (loader `0x10055890`) | standing, shadow, fallen |
+| `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ..., the 6-slot table at byte 205 | per slot |
 | `cliff` | 8 bytes | one sprite |
 | `dom` (houses), `most` (bridges) | own 512-byte palette, then an occupancy grid (?) | per state: halves, ground, shadow |
 
+The **6-slot table** (u32 offsets in the frame, 0 = none) is: colour intact, colour destroyed, shadow intact,
+shadow destroyed, ground intact, ground destroyed. A tree's "ground destroyed" is the fallen tree; a sunken barge is
+an empty colour sprite, a shadow and a ground sprite. The intact state is slots 0, 2 and 4.
+
 Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
-The engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and draws the intact state:
-every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
+Sets without a table: the engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and
+draws every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
 upright sprites sorted by screen y together with the units. Code: `crates/formats/src/objects.rs`.
 
 ## Other
