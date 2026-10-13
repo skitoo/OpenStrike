@@ -7,7 +7,8 @@ OpenStrike ships no game data. You need your own copy of *Sudden Strike Gold* (S
 
 ## Status
 
-Early engine: a map's ground scrolls in a raylib window and a tank drives where you right-click.
+Early engine: a map is drawn in the game's isometric view with its ground, roads, rails, trees, fences and
+buildings, and a tank drives where you right-click (no collisions yet).
 File formats are being reverse engineered; see `docs/formats.md`.
 
 ## Architecture

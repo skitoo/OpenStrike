@@ -3,20 +3,24 @@
 
 mod assets;
 mod camera;
+mod scene;
 
+use std::collections::HashMap;
 use std::path::PathBuf;
 
-use openstrike_formats::hot::frame_for_heading;
-use openstrike_formats::rhomb::Rect;
+use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
 use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, Vec2, World, step};
 use raylib::prelude::*;
 
 use crate::assets::Assets;
 use crate::camera::{Camera, CameraInput};
+use crate::scene::{ObjectPart, UnitView};
 
 const TANK: UnitId = UnitId(1);
-const SCREENSHOT_FRAMES: u32 = 120;
+const SCREENSHOT_FRAMES: u32 = 200;
+/// Ground texture tiles, in screen pixels.
+const CHUNK: i32 = 512;
 
 struct Options {
     data: PathBuf,
@@ -57,7 +61,20 @@ fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[
 
 struct SpriteTexture {
     anchor: (i32, i32),
+    size: (i32, i32),
     texture: Texture2D,
+}
+
+fn upload_sprite(rl: &mut RaylibHandle, thread: &RaylibThread, s: &Sprite) -> SpriteTexture {
+    SpriteTexture {
+        anchor: s.anchor,
+        size: (s.width as i32, s.height as i32),
+        texture: upload(rl, thread, s.width, s.height, &s.rgba),
+    }
+}
+
+fn upload_strip(rl: &mut RaylibHandle, thread: &RaylibThread, sprites: &[Sprite]) -> Vec<SpriteTexture> {
+    sprites.iter().map(|s| upload_sprite(rl, thread, s)).collect()
 }
 
 struct TankTextures {
@@ -68,11 +85,27 @@ struct TankTextures {
     mounts: Vec<(i32, i32)>,
 }
 
-fn upload_sprites(rl: &mut RaylibHandle, thread: &RaylibThread, sprites: &[Sprite]) -> Vec<SpriteTexture> {
-    sprites
-        .iter()
-        .map(|s| SpriteTexture { anchor: s.anchor, texture: upload(rl, thread, s.width, s.height, &s.rgba) })
-        .collect()
+/// Screen rectangle currently in view.
+fn view_rect(cam: &Camera, screen: (f32, f32)) -> Rect {
+    let (x1, y1) = cam.screen_to_map(screen.0, screen.1);
+    Rect { x: cam.x as i32, y: cam.y as i32, w: (x1 - cam.x) as i32 + 1, h: (y1 - cam.y) as i32 + 1 }
+}
+
+fn overlaps(view: Rect, x: i32, y: i32, w: i32, h: i32) -> bool {
+    x < view.x + view.w && y < view.y + view.h && x + w > view.x && y + h > view.y
+}
+
+fn draw_sprite<D: RaylibDraw>(d: &mut D, s: &SpriteTexture, at: (i32, i32), view: Rect) {
+    let (x, y) = (at.0 + s.anchor.0, at.1 + s.anchor.1);
+    if overlaps(view, x, y, s.size.0, s.size.1) {
+        d.draw_texture(&s.texture, x, y, Color::WHITE);
+    }
+}
+
+fn draw_unit<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: Rect) {
+    let mount = tank.mounts.get(u.frame).copied().unwrap_or_default();
+    draw_sprite(d, &tank.hull[u.frame], u.screen, view);
+    draw_sprite(d, &tank.turret[u.frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
 }
 
 fn read_input(rl: &RaylibHandle) -> CameraInput {
@@ -104,38 +137,40 @@ fn initial_world(assets: &Assets) -> World {
     World::new(Vec2::new(w as i32 * SUBPIXEL, h as i32 * SUBPIXEL), vec![tank])
 }
 
-fn visible(rect: Rect, cam: &Camera, screen: (f32, f32)) -> bool {
-    let (x1, y1) = cam.screen_to_map(screen.0, screen.1);
-    (rect.x as f32) < x1 && (rect.y as f32) < y1 && ((rect.x + rect.w) as f32) > cam.x && ((rect.y + rect.h) as f32) > cam.y
-}
-
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let opts = options();
     let assets = assets::load(&opts.data, &opts.map, &opts.climate, "t-26")?;
-    let (map_w, map_h) = assets.map.pixel_size();
+    let proj = assets.projection;
+    let (screen_w, screen_h) = proj.screen_size();
+    let objects = scene::objects(&assets.map, &proj, &assets.object_sets);
 
     let (mut rl, thread) = raylib::init().size(1280, 800).title("OpenStrike").resizable().build();
     rl.set_target_fps(60);
-    let ground: Vec<(Rect, Texture2D)> = assets
-        .ground
-        .iter()
-        .map(|c| (c.rect, upload(&mut rl, &thread, c.rect.w as u32, c.rect.h as u32, &c.rgba)))
-        .collect();
+
     let tank = TankTextures {
-        hull: upload_sprites(&mut rl, &thread, &assets.tank.hull),
-        hull_shadow: upload_sprites(&mut rl, &thread, &assets.tank.hull_shadow),
-        turret: upload_sprites(&mut rl, &thread, &assets.tank.turret),
-        turret_shadow: upload_sprites(&mut rl, &thread, &assets.tank.turret_shadow),
+        hull: upload_strip(&mut rl, &thread, &assets.tank.hull),
+        hull_shadow: upload_strip(&mut rl, &thread, &assets.tank.hull_shadow),
+        turret: upload_strip(&mut rl, &thread, &assets.tank.turret),
+        turret_shadow: upload_strip(&mut rl, &thread, &assets.tank.turret_shadow),
         mounts: assets.tank.mounts.clone(),
     };
+    // textures of the object parts this map uses
+    let mut part_textures: HashMap<(usize, usize), Vec<SpriteTexture>> = HashMap::new();
+    for o in objects.flat.iter().chain(&objects.shadows).chain(&objects.upright) {
+        part_textures.entry((o.set, o.frame)).or_insert_with(|| {
+            let parts = &assets.object_sets[o.set].frames[o.frame];
+            parts.iter().map(|p| upload_sprite(&mut rl, &thread, &p.image)).collect()
+        });
+    }
+    let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
 
     let mut world = initial_world(&assets);
     let tank_start = world.unit(TANK).map(|u| u.pos).unwrap_or_default();
-    let mut cam = Camera { x: tank_start.x as f32 / SUBPIXEL as f32 - 640.0, y: tank_start.y as f32 / SUBPIXEL as f32 - 400.0, zoom: 1.0 };
+    let (tx, ty) = proj.to_screen(tank_start.x / SUBPIXEL, tank_start.y / SUBPIXEL);
+    let mut cam = Camera { x: tx as f32 - 640.0, y: ty as f32 - 400.0, zoom: 1.0 };
     let mut pending: Vec<Command> = Vec::new();
     if opts.screenshot.is_some() {
-        let to = tank_start + Vec2::new(-200 * SUBPIXEL, -60 * SUBPIXEL);
-        pending.push(Command::Move { unit: TANK, to });
+        pending.push(Command::Move { unit: TANK, to: tank_start + Vec2::new(-165 * SUBPIXEL, 325 * SUBPIXEL) });
     }
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
@@ -144,10 +179,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     while !rl.window_should_close() {
         let dt = rl.get_frame_time().min(0.25);
         let screen = (rl.get_screen_width() as f32, rl.get_screen_height() as f32);
-        cam = camera::update(cam, &read_input(&rl), dt, (map_w as f32, map_h as f32), screen);
+        cam = camera::update(cam, &read_input(&rl), dt, (screen_w as f32, screen_h as f32), screen);
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) {
             let m = rl.get_mouse_position();
-            let (x, y) = cam.screen_to_map(m.x, m.y);
+            let (sx, sy) = cam.screen_to_map(m.x, m.y);
+            let (x, y) = proj.to_map(sx, sy);
             pending.push(Command::Move { unit: TANK, to: Vec2::new(x as i32 * SUBPIXEL, y as i32 * SUBPIXEL) });
         }
         accumulator += if opts.screenshot.is_some() { tick } else { dt };
@@ -157,27 +193,52 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             accumulator -= tick;
         }
 
+        let view = view_rect(&cam, screen);
+        // rasterise the ground chunks that just came into view
+        for cy in view.y.div_euclid(CHUNK)..=(view.y + view.h).div_euclid(CHUNK) {
+            for cx in view.x.div_euclid(CHUNK)..=(view.x + view.w).div_euclid(CHUNK) {
+                let outside = cx < 0 || cy < 0 || cx * CHUNK >= screen_w || cy * CHUNK >= screen_h;
+                if outside || ground.contains_key(&(cx, cy)) {
+                    continue;
+                }
+                let rect = Rect { x: cx * CHUNK, y: cy * CHUNK, w: CHUNK, h: CHUNK };
+                let rgba = rasterize_ground(&assets.map, &assets.rhombs, &assets.rhomb_palettes, rect);
+                ground.insert((cx, cy), upload(&mut rl, &thread, CHUNK as u32, CHUNK as u32, &rgba));
+            }
+        }
+        let mut units: Vec<UnitView> = scene::units(&world, &proj);
+        units.sort_by_key(|u| u.screen.1);
+
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
         {
-            let camera2d = Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
+            let target = Vector2::new(cam.x, cam.y);
+            let camera2d = Camera2D { offset: Vector2::zero(), target, rotation: 0.0, zoom: cam.zoom };
             let mut m = d.begin_mode2D(camera2d);
-            for (rect, texture) in ground.iter().filter(|(r, _)| visible(*r, &cam, screen)) {
-                m.draw_texture(texture, rect.x, rect.y, Color::WHITE);
-            }
-            for unit in &world.units {
-                let (x, y) = (unit.pos.x / SUBPIXEL, unit.pos.y / SUBPIXEL);
-                // the turret follows the hull until turrets get their own heading in the simulation
-                let k = frame_for_heading(unit.facing.0);
-                let (mx, my) = tank.mounts.get(k).copied().unwrap_or_default();
-                for (sprite, (dx, dy)) in [
-                    (&tank.hull_shadow[k], (0, 0)),
-                    (&tank.turret_shadow[k], (mx, my)),
-                    (&tank.hull[k], (0, 0)),
-                    (&tank.turret[k], (mx, my)),
-                ] {
-                    m.draw_texture(&sprite.texture, x + dx + sprite.anchor.0, y + dy + sprite.anchor.1, Color::WHITE);
+            for ((cx, cy), texture) in &ground {
+                if overlaps(view, cx * CHUNK, cy * CHUNK, CHUNK, CHUNK) {
+                    m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
+            }
+            let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame)][p.part];
+            for p in objects.flat.iter().chain(&objects.shadows) {
+                draw_sprite(&mut m, part(p), p.screen, view);
+            }
+            for u in &units {
+                let mount = tank.mounts.get(u.frame).copied().unwrap_or_default();
+                draw_sprite(&mut m, &tank.hull_shadow[u.frame], u.screen, view);
+                draw_sprite(&mut m, &tank.turret_shadow[u.frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
+            }
+            // upright objects and units, back to front
+            let mut units_left = units.iter().peekable();
+            for p in &objects.upright {
+                while let Some(u) = units_left.next_if(|u| u.screen.1 <= p.screen.1) {
+                    draw_unit(&mut m, &tank, u, view);
+                }
+                draw_sprite(&mut m, part(p), p.screen, view);
+            }
+            for u in units_left {
+                draw_unit(&mut m, &tank, u, view);
             }
         }
         d.draw_text("Right click: move   Arrows/WASD or middle drag: scroll   Wheel: zoom", 10, 10, 20, Color::RAYWHITE);

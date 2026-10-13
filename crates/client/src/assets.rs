@@ -3,21 +3,14 @@
 use std::path::Path;
 
 use openstrike_formats::hot;
+use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
+use openstrike_formats::objects::{self, ObjectSet};
 use openstrike_formats::palette::Palette;
-use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::{self, Image, KIND_SHADOW};
 use openstrike_formats::sue::{Archive, Vfs};
 
 pub type Error = Box<dyn std::error::Error>;
-
-/// Size of the ground tiles uploaded as textures, in map pixels.
-pub const CHUNK: i32 = 512;
-
-pub struct Chunk {
-    pub rect: Rect,
-    pub rgba: Vec<u8>,
-}
 
 /// Sprites of a turreted vehicle, each strip holding the 32 headings.
 pub struct VehicleSprites {
@@ -31,7 +24,11 @@ pub struct VehicleSprites {
 
 pub struct Assets {
     pub map: Map,
-    pub ground: Vec<Chunk>,
+    pub projection: Projection,
+    pub rhombs: Vec<u8>,
+    pub rhomb_palettes: Vec<Palette>,
+    /// One per entry of `map.object_sets`; empty when the set could not be loaded.
+    pub object_sets: Vec<ObjectSet>,
     pub tank: VehicleSprites,
 }
 
@@ -51,30 +48,15 @@ pub fn mount(data_dir: &Path, climate: &str) -> Result<Vfs, Error> {
         .filter_map(|e| e.ok().map(|e| e.path()))
         .filter(|p| p.extension().is_some_and(|e| e.eq_ignore_ascii_case("sue")))
         .collect();
-    paths.sort_by_key(|p| {
-        let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        (archive_climate(&stem).is_some(), stem)
-    });
+    let stem = |p: &Path| p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    paths.sort_by_key(|p| (archive_climate(&stem(p)).is_some(), stem(p)));
     let mut vfs = Vfs::default();
     for p in paths {
-        let stem = p.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        if archive_climate(&stem).is_none_or(|c| c == climate) {
+        if archive_climate(&stem(&p)).is_none_or(|c| c == climate) {
             vfs.mount(Archive::parse(std::fs::read(&p)?)?);
         }
     }
     Ok(vfs)
-}
-
-pub fn ground_chunks(map: &Map, rhombs: &[u8], palettes: &[Palette]) -> Vec<Chunk> {
-    let (w, h) = map.pixel_size();
-    let mut chunks = Vec::new();
-    for y in (0..h as i32).step_by(CHUNK as usize) {
-        for x in (0..w as i32).step_by(CHUNK as usize) {
-            let rect = Rect { x, y, w: CHUNK.min(w as i32 - x), h: CHUNK.min(h as i32 - y) };
-            chunks.push(Chunk { rect, rgba: rasterize_ground(map, rhombs, palettes, rect) });
-        }
-    }
-    chunks
 }
 
 pub fn vehicle(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
@@ -91,7 +73,6 @@ pub fn vehicle(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
     let [hull_shadow, turret_shadow] = shadow_runs[..] else {
         return Err(format!("{name}: expected 2 shadow runs, found {}", shadow_runs.len()).into());
     };
-    let turret = hull_shadow + 32;
     let decode = |start: usize| -> Result<Vec<Image>, Error> {
         let strip = frames.get(start..start + 32).ok_or("sprite strip out of range")?;
         strip.iter().map(|f| Ok(sprite::decode(f, &palette)?)).collect()
@@ -101,17 +82,33 @@ pub fn vehicle(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
     Ok(VehicleSprites {
         hull: decode(0)?,
         hull_shadow: decode(hull_shadow)?,
-        turret: decode(turret)?,
+        turret: decode(hull_shadow + 32)?,
         turret_shadow: decode(turret_shadow)?,
         mounts,
     })
 }
 
+fn object_set(vfs: &Vfs, name: &str) -> Result<ObjectSet, Error> {
+    let Some(rs2) = vfs.read(&format!("{}.rs2", objects::file_stem(name)))? else {
+        return Ok(ObjectSet::default());
+    };
+    let palettes = match vfs.read(&format!("{name}.pl"))? {
+        Some(p) => Palette::parse_many(&p)?,
+        None => Vec::new(),
+    };
+    Ok(objects::load_set(name, &rs2, &palettes).unwrap_or_default())
+}
+
 pub fn load(data_dir: &Path, map_path: &Path, climate: &str, tank: &str) -> Result<Assets, Error> {
     let vfs = mount(data_dir, climate)?;
     let map = map::parse(&std::fs::read(map_path)?)?;
-    let rhombs = vfs.require("mappic.rs2")?;
-    let palettes = Palette::parse_many(&vfs.require("rhomb.pl")?)?;
-    let ground = ground_chunks(&map, &rhombs, &palettes);
-    Ok(Assets { map, ground, tank: vehicle(&vfs, tank)? })
+    let object_sets = map.object_sets.iter().map(|n| object_set(&vfs, n)).collect::<Result<_, _>>()?;
+    Ok(Assets {
+        projection: Projection::of(&map),
+        rhombs: vfs.require("mappic.rs2")?,
+        rhomb_palettes: Palette::parse_many(&vfs.require("rhomb.pl")?)?,
+        object_sets,
+        tank: vehicle(&vfs, tank)?,
+        map,
+    })
 }
