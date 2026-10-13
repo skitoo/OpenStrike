@@ -13,6 +13,10 @@ use crate::{Error, Result};
 /// Map pixels per cell.
 pub const CELL: u32 = 32;
 
+/// Ground types in the order of `desc_common/GROUNDTYPES`, indexed by bits 8-11 of [`Map::layer2`].
+pub const GROUND_TYPES: [&str; 8] = ["grass", "lightgrass", "pashnya", "swamp", "darkground", "lightground", "water", "sand"];
+pub const GROUND_WATER: u8 = 6;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Object {
     /// Position in map pixels.
@@ -37,7 +41,7 @@ pub struct Map {
     pub preview: Vec<u16>,
     /// Per cell: `palette_select << 11 | rhomb_index`.
     pub ground: Vec<u16>,
-    /// Per cell, meaning unknown.
+    /// Per cell. Bits 8-11: ground type (see [`GROUND_TYPES`]); low byte 0xff on water; rest unknown.
     pub layer2: Vec<u32>,
     pub object_sets: Vec<String>,
     pub objects: Vec<Object>,
@@ -47,6 +51,11 @@ impl Map {
     pub fn rhomb(&self, x: u32, y: u32) -> (u16, u8) {
         let v = self.ground[(y * self.width + x) as usize];
         (v & 0x7ff, (v >> 11) as u8)
+    }
+
+    /// Ground type index of a cell (see [`GROUND_TYPES`]).
+    pub fn ground_type(&self, x: u32, y: u32) -> u8 {
+        ((self.layer2[(y * self.width + x) as usize] >> 8) & 0xf) as u8
     }
 
     pub fn pixel_size(&self) -> (u32, u32) {

@@ -71,6 +71,41 @@ pub fn rs2_frames(data: &[u8]) -> Result<Vec<&[u8]>> {
     Ok(slices(data, &offsets))
 }
 
+/// Length of the frame starting at `at` if one parses there exactly (every row ends on its byte
+/// length and stays within the frame width), else `None`. Used to find the sprites packed inside
+/// map object frames, whose headers are not all understood yet.
+pub fn frame_len(data: &[u8], at: usize) -> Option<usize> {
+    let mut r = Reader::at(data, at).ok()?;
+    let (x0, y0) = (r.i16().ok()?, r.i16().ok()?);
+    let (w, h, kind) = (r.u16().ok()? as usize, r.u16().ok()? as usize, r.u8().ok()?);
+    let plausible = (1..=1024).contains(&w) && (1..=1024).contains(&h) && x0.abs() < 1024 && y0.abs() < 1024;
+    if !plausible || !matches!(kind, 0xa1 | 0xa2 | KIND_SHADOW | 0xa9) {
+        return None;
+    }
+    for _ in 0..h {
+        let length = r.u16().ok()? as usize;
+        let line = r.bytes(length).ok()?;
+        let (mut x, mut i) = (0usize, 0usize);
+        while i < line.len() {
+            let op = line[i];
+            i += 1;
+            let n = (op & 0x3f) as usize;
+            x += n;
+            if kind != KIND_SHADOW {
+                i += match op >> 6 {
+                    2 => 1,
+                    3 => 0,
+                    _ => n,
+                };
+            }
+        }
+        if i != line.len() || x > w {
+            return None;
+        }
+    }
+    Some(r.pos() - at)
+}
+
 /// Frame kind byte, or `None` for an empty frame.
 pub fn frame_kind(frame: &[u8]) -> Option<u8> {
     frame.get(8).copied()
@@ -105,13 +140,17 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
                     (x..x + n).for_each(|i| put(i, [0, 0, 0], a));
                 }
                 (2, false) => {
-                    let c = palette.0[line.u8()? as usize];
-                    (x..x + n).for_each(|i| put(i, c, ALPHA_OPAQUE));
+                    let c = line.u8()? as usize;
+                    if !palette.transparent[c] {
+                        (x..x + n).for_each(|i| put(i, palette.colours[c], ALPHA_OPAQUE));
+                    }
                 }
                 (m, false) => {
                     let a = if m == 0 { ALPHA_OPAQUE } else { ALPHA_BLEND };
                     for (i, &c) in line.bytes(n)?.iter().enumerate() {
-                        put(x + i, palette.0[c as usize], a);
+                        if !palette.transparent[c as usize] {
+                            put(x + i, palette.colours[c as usize], a);
+                        }
                     }
                 }
             }

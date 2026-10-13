@@ -2,11 +2,11 @@ use openstrike_formats::palette::{Palette, rgb565};
 use openstrike_formats::sprite::{self, ALPHA_BLEND, ALPHA_OPAQUE, ALPHA_SHADOW, ALPHA_SHADOW_EDGE, Image, KIND_SHADOW};
 
 fn grey_palette() -> Palette {
-    let mut p = [[0u8; 3]; 256];
-    for (i, c) in p.iter_mut().enumerate() {
+    let mut p = Palette::from_rgb565(&[0; 256]);
+    for (i, c) in p.colours.iter_mut().enumerate() {
         *c = [i as u8; 3];
     }
-    Palette(p)
+    p
 }
 
 fn frame(kind: u8, w: u16, rows: &[&[u8]]) -> Vec<u8> {
@@ -83,4 +83,24 @@ fn splits_rs2_and_keeps_empty_frames() {
     let mut d: Vec<u8> = [2u32, 16, 16, 18].iter().flat_map(|v| v.to_le_bytes()).collect();
     d.extend([7, 8]);
     assert_eq!(sprite::rs2_frames(&d).unwrap(), vec![&[][..], &[7u8, 8][..]]);
+}
+
+#[test]
+fn colour_key_entries_stay_transparent() {
+    let mut values = [0u16; 256];
+    values[5] = openstrike_formats::palette::COLOUR_KEY;
+    let f = frame(0xa1, 2, &[&[0x02, 5, 0]]);
+    let img = sprite::decode(&f, &Palette::from_rgb565(&values)).unwrap();
+    assert_eq!(pixel(&img, 0, 0)[3], 0);
+    assert_eq!(pixel(&img, 1, 0)[3], ALPHA_OPAQUE);
+}
+
+#[test]
+fn frame_len_finds_exact_frames_only() {
+    let f = frame(0xa2, 6, &[&[0xC1, 0x01, 10, 0x41, 20, 0x82, 30]]);
+    let mut data = vec![9, 9, 9];
+    data.extend(&f);
+    assert_eq!(sprite::frame_len(&data, 3), Some(f.len()));
+    assert_eq!(sprite::frame_len(&data, 0), None);
+    assert_eq!(sprite::frame_len(&data, 4), None);
 }

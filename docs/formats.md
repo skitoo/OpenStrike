@@ -139,21 +139,49 @@ a byte grid (0x415740); two size-prefixed blocks (0x415a70, 0x415cb0); 2x i16 pa
 
 Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps the used rhombs, 0x400 bytes each).
 
-- `<climate>/mappic.rs2`: raw 8-bit **rhombs** of 1024 bytes, each a 64x32 diamond whose rows are 2, 6, ..., 62, 62, ..., 2 pixels wide.
-- `<climate>/rhomb.pl`: 64 palettes of 256 RGB565 colours.
-- Layout (inferred, renders seamlessly): cell (x, y) is a diamond centred at (32x, 32y + 16 * (x & 1)),
-  so a 128x128 map is 4096x4096 pixels, which matches the object coordinates.
-- Open questions: the 5-bit palette selector is 16 almost everywhere (brightness?); water cells render dark green,
-  so water is probably drawn by a separate (animated) routine; the u32 second layer is not understood.
-- Experimental renderer: `tools/ssm_render.py`.
+- `mappic.rs2` (one per climate archive): raw 8-bit **rhombs** of 1024 bytes, each a 64x32 diamond whose rows
+  are 2, 6, ..., 62, 62, ..., 2 pixels wide.
+- `rhomb.pl`: 64 palettes of 256 RGB565 colours. They are **brightness levels** (0 dark, 63 bright); the 5-bit
+  selector of each cell picks one (16 almost everywhere on the sample map, 31 on a few cells).
+- **Isometric projection** (inferred, see below): map pixel (x, y) is drawn at screen (x - y, (x + y) / 2), so a
+  32x32 cell becomes a 64x32 rhomb, and cell (cx, cy) is centred at ((cx - cy) * 32, (cx + cy) * 16 + 16).
+  Evidence: rail pieces (`trop` frame 48, a diagonal 140x68 sprite) are placed at a constant x every 80 map pixels;
+  they only join into a track under this projection. The map is a diamond on screen.
+- Code: `crates/formats/src/iso.rs`, `crates/formats/src/rhomb.rs`.
+
+### Second layer and ground types
+
+`layer2` (u32 per cell): bits 8-11 are the ground type, in the order of `desc_common/GROUNDTYPES`:
+grass, lightgrass, pashnya (ploughed), swamp, darkground, lightground, **water** (6), sand.
+The low byte is 0xff on water and 0x00 on land; bit 15 and bits 16+ are not understood yet.
+
+### Water
+
+Water cells use rhombs whose pixels sit in palette indices 146-156, which are dark green in every `rhomb.pl`
+palette: the in-game water is most likely that dark green (the minimap draws it blue).
+Waves are animated overlays: `common01/misc/WAVES` (`wave water 8 wolny fl_lay ...`) and
+`animat/WOLNY` (`woln1`, `woln2`, `woln3`, animations in `animats/woln*.ani` + `.col`). Not rendered yet.
 
 ### Objects
 
-Object sets are `<climate>/<name>.rs2` + `<name>.pl`. `.rs2` = u32 count, u32 offsets[count + 1], then frames.
-`fre`, `trop` (roads and rails), `vor` and `pont` use the `.pck` colour frame format (kind `0xa2`).
-`tree`, `lay`, `stand`, `zabor`, `cliff`, `most`, `houses` use other frame encodings: to analyse.
-Roads drawn at (x, y) + frame anchor land in the right places but with saw-tooth edges: the anchoring or the
-ground stagger is still wrong somewhere.
+Object sets are `<name>.rs2` + `<name>.pl` in the climate archive; `dom` is `houses.rs2`.
+`.rs2` = u32 count, u32 offsets[count + 1], then one frame per object. Each frame is a set-specific header followed
+by a run of sprites in the `.pck` frame format:
+
+| Set | Header (as far as known) | Sprites |
+|---|---|---|
+| `trop`, `fre`, `vor`, `pont` | none | one flat sprite (roads, rails, paths) |
+| `lay` | u8, u32 sprite length | one or two flat sprites |
+| `zabor` (fences) | u32 sprite length (loader `0x10056dc0`) | colour, shadow |
+| `tree` | 5 bytes, then 6 u32 sprite offsets, 0 = none (loader `0x10055890`) | standing, shadow, fallen |
+| `stand` | u32 palette index (0-4: `stand.pl` holds 5 palettes), ... | colour, shadow, destroyed |
+| `cliff` | 8 bytes | one sprite |
+| `dom` (houses), `most` (bridges) | own 512-byte palette, then an occupancy grid (?) | per state: halves, ground, shadow |
+
+Palette entry `0xF81F` (magenta) is the transparency key in object sprites.
+The engine locates the sprites with `sprite::frame_len` (a frame that parses exactly) and draws the intact state:
+every sprite up to and including the first shadow. Layers: flat sets and `0xa2` ground sprites, then shadows, then
+upright sprites sorted by screen y together with the units. Code: `crates/formats/src/objects.rs`.
 
 ## Other
 

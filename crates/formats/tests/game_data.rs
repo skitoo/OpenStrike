@@ -61,3 +61,35 @@ fn every_single_player_map_parses() {
     }
     assert_eq!(count, 164);
 }
+
+#[test]
+fn summer_object_sets_decode() {
+    use openstrike_formats::objects::{self, Layer};
+    let Some(dir) = data_dir() else { return };
+    let summer = Archive::parse(std::fs::read(dir.join("summer.sue")).unwrap()).unwrap();
+    for name in ["trop", "tree", "stand", "zabor", "dom", "lay", "fre", "cliff", "most"] {
+        let stem = objects::file_stem(name);
+        let rs2 = summer.read(&format!("{stem}.rs2")).unwrap().unwrap();
+        let pals = summer.read(&format!("{name}.pl")).unwrap().map(|p| Palette::parse_many(&p).unwrap()).unwrap_or_default();
+        let set = objects::load_set(name, &rs2, &pals).unwrap();
+        let decoded = set.frames.iter().filter(|f| !f.is_empty()).count();
+        assert!(decoded > 0, "{name}: nothing decoded");
+        if name == "tree" {
+            // standing tree then its shadow
+            let layers: Vec<Layer> = set.frames[0].iter().map(|p| p.layer).collect();
+            assert_eq!(layers, vec![Layer::Upright, Layer::Shadow]);
+        }
+    }
+}
+
+#[test]
+fn water_cells_are_ground_type_water() {
+    let Some(dir) = data_dir() else { return };
+    let m = map::parse(&std::fs::read(dir.join("Maps/single/'Act of Sabotage'.ssm")).unwrap()).unwrap();
+    let water = (0..m.height)
+        .flat_map(|y| (0..m.width).map(move |x| (x, y)))
+        .filter(|&(x, y)| m.ground_type(x, y) == map::GROUND_WATER)
+        .count();
+    // the harbour: about a quarter of the 128x128 cells
+    assert!((3000..6000).contains(&water), "{water} water cells");
+}

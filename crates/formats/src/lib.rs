@@ -5,7 +5,9 @@
 
 mod error;
 pub mod hot;
+pub mod iso;
 pub mod map;
+pub mod objects;
 pub mod palette;
 mod reader;
 pub mod rhomb;
