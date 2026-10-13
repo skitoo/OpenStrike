@@ -41,14 +41,15 @@ pub struct Part {
 
 /// Side of a building footprint grid, in tiles of 16 map pixels.
 pub const FOOTPRINT_SIZE: usize = 14;
-/// Grid cell under the object position. Fitted on the data: it best aligns the solid cells with the
-/// house's ground sprite for 75 of the 113 summer houses (7 for 5 of them, 5 for 31).
+/// Grid cell under the object position: the original computes the tile as `(x >> 4) + gx - 6`
+/// (same routines as [`FOOTPRINT_SOLID`]), which the data also suggested (75 of the 113 summer houses).
 pub const FOOTPRINT_ORIGIN: i32 = 6;
 pub type Footprint = [[u8; FOOTPRINT_SIZE]; FOOTPRINT_SIZE];
 
-/// Footprint cells that block vehicles: bits 0x40 (the building) and 0x04 (its walls).
-/// Inferred from the data: these bits form the solid block, while 0x01-0x03 ring it.
-pub const FOOTPRINT_SOLID: u8 = 0x44;
+/// Footprint cells that block: bit 0x01. The original game tests exactly this bit when it writes a
+/// house into the map's passability (`Game_Dll.dll` `0x10054cda`, `0x10054f02`, `0x10055694`); the
+/// other bits (0x02, 0x04, 0x40) are not used there.
+pub const FOOTPRINT_SOLID: u8 = 0x01;
 
 /// Side of a bridge grid (`most`), in tiles of 16 map pixels.
 pub const BRIDGE_SIZE: usize = 22;
