@@ -6,6 +6,7 @@ mod camera;
 
 use std::path::PathBuf;
 
+use openstrike_formats::hot::frame_for_heading;
 use openstrike_formats::rhomb::Rect;
 use openstrike_formats::sprite::Image as Sprite;
 use openstrike_sim::{Command, Direction, Order, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, Vec2, World, step};
@@ -46,12 +47,6 @@ fn options() -> Options {
     o
 }
 
-/// Hull frame for a heading. The game has 32 hull frames; which frame faces east is not known
-/// yet, so this mapping is a placeholder to check against the original.
-fn hull_frame(facing: Direction) -> usize {
-    facing.0 as usize * 2
-}
-
 fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[u8]) -> Texture2D {
     let image = Image::gen_image_color(w as i32, h as i32, Color::BLANK);
     let mut texture = rl.load_texture_from_image(thread, &image).expect("texture upload");
@@ -63,6 +58,14 @@ fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[
 struct SpriteTexture {
     anchor: (i32, i32),
     texture: Texture2D,
+}
+
+struct TankTextures {
+    hull: Vec<SpriteTexture>,
+    hull_shadow: Vec<SpriteTexture>,
+    turret: Vec<SpriteTexture>,
+    turret_shadow: Vec<SpriteTexture>,
+    mounts: Vec<(i32, i32)>,
 }
 
 fn upload_sprites(rl: &mut RaylibHandle, thread: &RaylibThread, sprites: &[Sprite]) -> Vec<SpriteTexture> {
@@ -118,15 +121,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .iter()
         .map(|c| (c.rect, upload(&mut rl, &thread, c.rect.w as u32, c.rect.h as u32, &c.rgba)))
         .collect();
-    let hull = upload_sprites(&mut rl, &thread, &assets.tank.hull);
-    let shadow = upload_sprites(&mut rl, &thread, &assets.tank.shadow);
+    let tank = TankTextures {
+        hull: upload_sprites(&mut rl, &thread, &assets.tank.hull),
+        hull_shadow: upload_sprites(&mut rl, &thread, &assets.tank.hull_shadow),
+        turret: upload_sprites(&mut rl, &thread, &assets.tank.turret),
+        turret_shadow: upload_sprites(&mut rl, &thread, &assets.tank.turret_shadow),
+        mounts: assets.tank.mounts.clone(),
+    };
 
     let mut world = initial_world(&assets);
     let tank_start = world.unit(TANK).map(|u| u.pos).unwrap_or_default();
     let mut cam = Camera { x: tank_start.x as f32 / SUBPIXEL as f32 - 640.0, y: tank_start.y as f32 / SUBPIXEL as f32 - 400.0, zoom: 1.0 };
     let mut pending: Vec<Command> = Vec::new();
     if opts.screenshot.is_some() {
-        let to = tank_start + Vec2::new(150 * SUBPIXEL, 90 * SUBPIXEL);
+        let to = tank_start + Vec2::new(-200 * SUBPIXEL, -60 * SUBPIXEL);
         pending.push(Command::Move { unit: TANK, to });
     }
     let tick = 1.0 / TICKS_PER_SECOND as f32;
@@ -159,8 +167,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
             for unit in &world.units {
                 let (x, y) = (unit.pos.x / SUBPIXEL, unit.pos.y / SUBPIXEL);
-                for sprite in [&shadow[hull_frame(unit.facing)], &hull[hull_frame(unit.facing)]] {
-                    m.draw_texture(&sprite.texture, x + sprite.anchor.0, y + sprite.anchor.1, Color::WHITE);
+                // the turret follows the hull until turrets get their own heading in the simulation
+                let k = frame_for_heading(unit.facing.0);
+                let (mx, my) = tank.mounts.get(k).copied().unwrap_or_default();
+                for (sprite, (dx, dy)) in [
+                    (&tank.hull_shadow[k], (0, 0)),
+                    (&tank.turret_shadow[k], (mx, my)),
+                    (&tank.hull[k], (0, 0)),
+                    (&tank.turret[k], (mx, my)),
+                ] {
+                    m.draw_texture(&sprite.texture, x + dx + sprite.anchor.0, y + dy + sprite.anchor.1, Color::WHITE);
                 }
             }
         }

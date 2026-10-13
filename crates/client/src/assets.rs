@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use openstrike_formats::hot;
 use openstrike_formats::map::{self, Map};
 use openstrike_formats::palette::Palette;
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
@@ -18,10 +19,14 @@ pub struct Chunk {
     pub rgba: Vec<u8>,
 }
 
-/// Hull frames of a vehicle (32 directions) and their shadows.
+/// Sprites of a turreted vehicle, each strip holding the 32 headings.
 pub struct VehicleSprites {
     pub hull: Vec<Image>,
-    pub shadow: Vec<Image>,
+    pub hull_shadow: Vec<Image>,
+    pub turret: Vec<Image>,
+    pub turret_shadow: Vec<Image>,
+    /// Turret mount on the hull, per hull frame.
+    pub mounts: Vec<(i32, i32)>,
 }
 
 pub struct Assets {
@@ -76,14 +81,30 @@ pub fn vehicle(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
     let pck = vfs.require(&format!("{name}.pck"))?;
     let palette = Palette::parse(&vfs.require(&format!("{name}.col"))?)?;
     let frames = sprite::pck_frames(&pck)?;
-    let first_shadow = frames
-        .iter()
-        .position(|f| sprite::frame_kind(f) == Some(KIND_SHADOW))
-        .ok_or("vehicle without shadow frames")?;
-    let decode = |range: std::ops::Range<usize>| -> Result<Vec<Image>, Error> {
-        frames[range].iter().map(|f| Ok(sprite::decode(f, &palette)?)).collect()
+    // Observed layout (t-26.pck): hull and damage variants, hull shadows, turret, turret shadows.
+    let shadow_runs: Vec<usize> = (0..frames.len())
+        .filter(|&i| {
+            sprite::frame_kind(frames[i]) == Some(KIND_SHADOW)
+                && (i == 0 || sprite::frame_kind(frames[i - 1]) != Some(KIND_SHADOW))
+        })
+        .collect();
+    let [hull_shadow, turret_shadow] = shadow_runs[..] else {
+        return Err(format!("{name}: expected 2 shadow runs, found {}", shadow_runs.len()).into());
     };
-    Ok(VehicleSprites { hull: decode(0..32)?, shadow: decode(first_shadow..first_shadow + 32)? })
+    let turret = hull_shadow + 32;
+    let decode = |start: usize| -> Result<Vec<Image>, Error> {
+        let strip = frames.get(start..start + 32).ok_or("sprite strip out of range")?;
+        strip.iter().map(|f| Ok(sprite::decode(f, &palette)?)).collect()
+    };
+    let mut mounts = hot::parse(&vfs.require(&format!("{name}.hot"))?)?;
+    mounts.truncate(32);
+    Ok(VehicleSprites {
+        hull: decode(0)?,
+        hull_shadow: decode(hull_shadow)?,
+        turret: decode(turret)?,
+        turret_shadow: decode(turret_shadow)?,
+        mounts,
+    })
 }
 
 pub fn load(data_dir: &Path, map_path: &Path, climate: &str, tank: &str) -> Result<Assets, Error> {
