@@ -48,11 +48,47 @@ The file-reading function itself has not been decompiled yet: the "raw stored ch
 
 ### Contents
 
-- `.col` (519), `.pck` (376), `.ani` (229), `.hot` (123), `.rs2` (98): graphics (palettes, packed sprites, animations, hotspots: to analyse).
+- `.col` (519) palettes and `.pck` (376) sprites: see below. `.ani` (229), `.hot` (123), `.rs2` (98): to analyse.
 - Files with no extension (1,182), mostly in `desc_*`: **plain-text unit descriptions**. Example `desc_common/units/t-26`:
   armour by face (`front=15 side=15 turret=15`), gun calibre, ammo, speed, health,
   `#include`-style inheritance (`#hu\light.tank.common`), tab-separated key/value pairs.
 - `.txt`, `.scc`, `.apm`, `.edt`, `.seq`: scripts, sequences, editor data.
+
+## Palettes `.col`
+
+256 little-endian RGB565 colours (512 bytes).
+
+## Sprites `.pck`
+
+Decoder: `tools/pck.py`, check: `tools/pck_validate.py`.
+Validated on 280 files / 36,323 frames (every row ends on its length and every frame on its boundary).
+The blitter lives in `cad800.dll` (and its `cad640`/`cad1024` siblings), a table of ~60 drawing routines
+returned by its only export `CADraw_Init`; the sprite routine is hand-written assembly at `0x100044f5`.
+
+```
+file  = u32 offsets[n + 1] from byte 0           (frame i = offsets[i]..offsets[i + 1])
+      | u32 header, then the same table at byte 4 (PARA, SHOT, STR...)
+frame = i16 x0, i16 y0      anchor offset (draw at position + (x0, y0))
+        u16 width, u16 height
+        u8  kind            0xa1 / 0xa2 / 0xa9 colour, 0xa3 shadow, 0xa5 unknown
+        rows[height]: u16 byte length, then commands (top 2 bits = mode, low 6 bits = n)
+```
+
+| Mode | Colour frames (observed in the blitter) | Shadow frames `0xa3` (inferred) |
+|---|---|---|
+| `0x00 \| n` | copy n palette pixels (`0x100045ab`) | n shadow pixels |
+| `0x40 \| n` | copy n pixels blended 50 % with the background: `(src + dst - ((src ^ dst) & mask)) >> 1` (`0x100045d0`), anti-aliased edges | n lighter shadow pixels (to confirm) |
+| `0x80 \| n` | repeat the next palette pixel n times (`rep stosw`, `0x10004620`) | n transparent pixels |
+| `0xC0 \| n` | skip n transparent pixels | n transparent pixels |
+
+Unit files hold the colour frames first, then the shadows (BRON: 288 frames, shadows from 160, 64 of them).
+The exact shadow strength still has to be read from the shadow blitter.
+
+Not handled yet:
+- `xx 00 00 CA` container (47 files: briefing backgrounds 640x480, menu animations, `d_shadow`);
+- kind `0xa5` (258 frames, menus);
+- a few odd files (`SHOT.PCK`, `STR.PCK`, menu fonts).
+- `.hot` (hotspots?) and `.ani` (animations): to analyse.
 
 ## Maps `.ssm` / `.ssc` / `.smm`
 
