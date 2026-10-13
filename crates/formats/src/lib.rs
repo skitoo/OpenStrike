@@ -3,6 +3,8 @@
 //! Every function takes bytes and returns plain data: no I/O beyond what the caller hands in,
 //! no rendering library. Format notes and the original code addresses live in `docs/formats.md`.
 
+pub mod curves;
+pub mod desc;
 mod error;
 pub mod hot;
 pub mod iso;

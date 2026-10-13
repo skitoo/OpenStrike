@@ -22,6 +22,10 @@ impl<'a> Reader<'a> {
         self.pos
     }
 
+    pub fn remaining(&self) -> usize {
+        self.data.len() - self.pos
+    }
+
     pub fn bytes(&mut self, n: usize) -> Result<&'a [u8]> {
         let end = self.pos.checked_add(n).filter(|&e| e <= self.data.len());
         let end = end.ok_or(Error::Truncated { need: n, at: self.pos })?;

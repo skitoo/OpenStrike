@@ -154,3 +154,28 @@ fn trees_stands_and_houses_have_their_states() {
     assert_eq!(map_state("dom", 2), 2);
     assert_eq!(map_state("zabor", 2), 0);
 }
+
+#[test]
+fn movement_curves_parse() {
+    let Some(dir) = data_dir() else { return };
+    let common = Archive::parse(std::fs::read(dir.join("common.sue")).unwrap()).unwrap();
+    let curves = openstrike_formats::curves::parse(&common.read("curvenew").unwrap().unwrap()).unwrap();
+    assert_eq!(curves.0.len(), 81);
+    // straight on east: one point on the west edge of the new cell, 15 px down
+    assert_eq!(curves.get(0, 0).iter().map(|p| (p.x, p.y)).collect::<Vec<_>>(), vec![(0, 3840)]);
+    // stopping: the middle of the cell
+    assert_eq!(curves.get(8, 0).last().map(|p| (p.x, p.y)), Some((3840, 3840)));
+    assert!(curves.get(8, 8).is_empty());
+}
+
+#[test]
+fn unit_descriptions_follow_their_includes() {
+    let Some(dir) = data_dir() else { return };
+    let desc_common = Archive::parse(std::fs::read(dir.join("desc_common.sue")).unwrap()).unwrap();
+    let desc = openstrike_formats::desc::load("units/t-26", &mut |name| desc_common.read(name).ok().flatten()).unwrap();
+    // MoveSpeed 1.2,1.4 in light.tank.common, overridden by the unit's own 1.4,1.5
+    assert_eq!((desc.float("MoveSpeed", 0), desc.float("MoveSpeed", 1)), (Some(1.4), Some(1.5)));
+    assert_eq!((desc.int("TurnDelay", 0), desc.int("TurnDelay", 1)), (Some(5), Some(3)));
+    assert_eq!(desc.int("CanMoveBackward", 0), Some(1));
+    assert_eq!(desc.get("Engine").map(|v| v[0].as_str()), Some("Track"));
+}
