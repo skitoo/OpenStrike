@@ -3,7 +3,6 @@
 
 
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
@@ -14,57 +13,13 @@ use raylib::prelude::*;
 use openstrike::assets::{self, Assets};
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
+use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
+use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, terrain};
 
 /// The demo platoon, by sprite name; vehicles that fail to load are skipped.
 const PLATOON: [&str; 6] = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherm-5"];
 const SCREENSHOT_FRAMES: u32 = 200;
-/// Ground texture tiles, in screen pixels.
-const CHUNK: i32 = 512;
-
-struct Options {
-    data: PathBuf,
-    map: PathBuf,
-    climate: String,
-    screenshot: Option<PathBuf>,
-    /// Map pixel to centre the camera on at start (defaults to the tank).
-    look_at: Option<(i32, i32)>,
-    zoom: f32,
-    show_blocked: bool,
-}
-
-fn options() -> Options {
-    let mut args = std::env::args().skip(1);
-    let mut o = Options {
-        data: PathBuf::from("data/SuddenStrikeGold"),
-        map: PathBuf::new(),
-        climate: "summer".into(),
-        screenshot: None,
-        look_at: None,
-        zoom: 1.0,
-        show_blocked: false,
-    };
-    while let Some(a) = args.next() {
-        match a.as_str() {
-            "--data" => o.data = args.next().map(PathBuf::from).unwrap_or(o.data),
-            "--climate" => o.climate = args.next().unwrap_or(o.climate),
-            "--screenshot" => o.screenshot = args.next().map(PathBuf::from),
-            "--show-blocked" => o.show_blocked = true,
-            "--zoom" => o.zoom = args.next().and_then(|v| v.parse().ok()).unwrap_or(o.zoom),
-            "--look-at" => {
-                o.look_at = args.next().and_then(|v| {
-                    let (x, y) = v.split_once(',')?;
-                    Some((x.trim().parse().ok()?, y.trim().parse().ok()?))
-                })
-            }
-            _ => o.map = PathBuf::from(a),
-        }
-    }
-    if o.map.as_os_str().is_empty() {
-        o.map = o.data.join("Maps/single/'Act of Sabotage'.ssm");
-    }
-    o
-}
 
 fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[u8]) -> Texture2D {
     let image = Image::gen_image_color(w as i32, h as i32, Color::BLANK);
@@ -176,8 +131,25 @@ fn initial_world(assets: &Assets, terrain: &Terrain) -> World {
     World::new(Vec2::new(w as i32 * SUBPIXEL, h as i32 * SUBPIXEL), units)
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let opts = options();
+fn main() {
+    let opts = match options::parse(std::env::args().skip(1)) {
+        Ok(Parsed::Run(o)) => o,
+        Ok(Parsed::Help) => {
+            println!("{}", options::USAGE);
+            return;
+        }
+        Err(e) => {
+            eprintln!("openstrike: {e}");
+            std::process::exit(2);
+        }
+    };
+    if let Err(e) = options::check(&opts).map_err(|e| e.into()).and_then(|_| run(&opts)) {
+        eprintln!("openstrike: {e}");
+        std::process::exit(1);
+    }
+}
+
+fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let assets = assets::load(&opts.data, &opts.map, &opts.climate, &PLATOON)?;
     if assets.vehicles.is_empty() {
         return Err("no vehicle could be loaded".into());
@@ -266,17 +238,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         units.sort_by_key(|u| u.screen.1);
 
         let view = view_rect(&cam, screen);
-        // rasterise the ground chunks that just came into view
-        for cy in view.y.div_euclid(CHUNK)..=(view.y + view.h).div_euclid(CHUNK) {
-            for cx in view.x.div_euclid(CHUNK)..=(view.x + view.w).div_euclid(CHUNK) {
-                let outside = cx < 0 || cy < 0 || cx * CHUNK >= screen_w || cy * CHUNK >= screen_h;
-                if outside || ground.contains_key(&(cx, cy)) {
-                    continue;
-                }
-                let rect = Rect { x: cx * CHUNK, y: cy * CHUNK, w: CHUNK, h: CHUNK };
-                let rgba = rasterize_ground(&assets.map, &assets.rhombs, &assets.rhomb_palettes, rect);
-                ground.insert((cx, cy), upload(&mut rl, &thread, CHUNK as u32, CHUNK as u32, &rgba));
-            }
+        // drop the ground chunks far from the view, then rasterise a few missing ones, nearest first
+        ground.retain(|&c, _| chunks::keep(c, view));
+        let missing: Vec<(i32, i32)> =
+            chunks::visible(view, (screen_w, screen_h)).into_iter().filter(|c| !ground.contains_key(c)).take(MAX_NEW_PER_FRAME).collect();
+        for (cx, cy) in missing {
+            let rect = Rect { x: cx * CHUNK, y: cy * CHUNK, w: CHUNK, h: CHUNK };
+            let rgba = rasterize_ground(&assets.map, &assets.rhombs, &assets.rhomb_palettes, rect);
+            ground.insert((cx, cy), upload(&mut rl, &thread, CHUNK as u32, CHUNK as u32, &rgba));
         }
 
         let mut d = rl.begin_drawing(&thread);
