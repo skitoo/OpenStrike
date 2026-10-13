@@ -90,6 +90,24 @@ Not handled yet:
 - a few odd files (`SHOT.PCK`, `STR.PCK`, menu fonts).
 - `.hot` (hotspots?) and `.ani` (animations): to analyse.
 
+## Vehicle sprite layout and `.hot` attachment points
+
+Observed on `t-26.pck` (288 frames) with `t-26.hot` (64 points):
+
+| Frames | Content |
+|---|---|
+| 0-31 | hull, 32 headings |
+| 32-159 | hull variants (damage states? to check) |
+| 160-191 | hull shadows (first `0xa3` run) |
+| 192-223 | turret, 32 headings |
+| 224-255 | turret variants (to check) |
+| 256-287 | turret shadows (second `0xa3` run) |
+
+`.hot` = i32 (x, y) pairs. For the T-26: points 0-31 are the turret mount per hull frame (about (0, -13)),
+points 32-63 the gun muzzle per turret frame. The muzzle points trace an ellipse that fixes the orientation:
+**frame k faces (k + 4) x 11.25 degrees clockwise from east** (frame 28 east, 4 south, 12 west, 20 north).
+Decoder: `crates/formats/src/hot.rs`. Other vehicles have more points (`bron.hot`: 128), meaning unknown.
+
 ## Maps
 
 Three gzip-compressed formats: `SSSM` single-player maps (`.ssm`, version `0x10f`, handled),

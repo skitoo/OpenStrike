@@ -4,6 +4,7 @@
 //! no rendering library. Format notes and the original code addresses live in `docs/formats.md`.
 
 mod error;
+pub mod hot;
 pub mod map;
 pub mod palette;
 mod reader;
