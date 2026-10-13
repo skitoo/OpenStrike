@@ -3,6 +3,8 @@
 
 pub mod assets;
 pub mod camera;
+pub mod chunks;
+pub mod options;
 pub mod scene;
 pub mod selection;
 pub mod terrain;
