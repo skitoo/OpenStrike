@@ -90,10 +90,52 @@ Not handled yet:
 - a few odd files (`SHOT.PCK`, `STR.PCK`, menu fonts).
 - `.hot` (hotspots?) and `.ani` (animations): to analyse.
 
-## Maps `.ssm` / `.ssc` / `.smm`
+## Maps
 
-- `.ssm` (single-player maps): gzip (`1F 8B`). Content to analyse.
-- `.ssc`: campaigns. `.smm`: multiplayer (to check).
+Three gzip-compressed formats: `SSSM` single-player maps (`.ssm`, version `0x10f`, handled),
+`SSMM` multiplayer maps (`.smm`, version `0x112`) and `CAMP` campaigns (`.ssc`, embed their maps): not handled yet.
+
+### `.ssm` (single player)
+
+Layout from the map **writer** in the editor, `QED.EXE` `0x415fa0`, which writes 13 sections in order.
+Parser: `tools/ssm_probe.py`, validated up to the end of the object list on all 164 single-player maps.
+
+```
+"SSSM", u32 version (0x10f), 16-byte GUID
+u32 x5 (2, 12, 2, 4, 0 in the samples: meaning unknown), u32 width, u32 height   (cells, 128 or 256)
+briefing:  u32 length including the NUL, then the text (latin-1)               0x415790
+preview:   height x width RGB565 (half size when a side is > 128)              0x414610
+ground:    width x height u16 = palette_select << 11 | rhomb index             0x414710
+           width x height u32 second layer (flags / heights? unknown)
+           u32 11, then 11 x 16-byte object set names:
+             bred fre lay stand tree trop dom zabor cliff vor most             0x414210
+           u32 n, n x 8-byte objects: i16 x, i16 y (map pixels, 32 per cell),
+             u8 set (index into the names above), u8 frame, u8 ?, u8 ?
+then (not parsed yet): u32 n + n x 16 bytes (0x415140); 100 x 27-byte records (0x4151b0);
+units, size-prefixed (0x4152f0); 3-4 player/side records of 0x161 bytes (0x415b10);
+0x4e-byte records + a byte grid (0x4155d0); compressed blobs (`VOVA_Comp`, 0x4156b0);
+a byte grid (0x415740); two size-prefixed blocks (0x415a70, 0x415cb0); 2x i16 pairs (0x415d50)
+```
+
+### Ground
+
+Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps the used rhombs, 0x400 bytes each).
+
+- `<climate>/mappic.rs2`: raw 8-bit **rhombs** of 1024 bytes, each a 64x32 diamond whose rows are 2, 6, ..., 62, 62, ..., 2 pixels wide.
+- `<climate>/rhomb.pl`: 64 palettes of 256 RGB565 colours.
+- Layout (inferred, renders seamlessly): cell (x, y) is a diamond centred at (32x, 32y + 16 * (x & 1)),
+  so a 128x128 map is 4096x4096 pixels, which matches the object coordinates.
+- Open questions: the 5-bit palette selector is 16 almost everywhere (brightness?); water cells render dark green,
+  so water is probably drawn by a separate (animated) routine; the u32 second layer is not understood.
+- Experimental renderer: `tools/ssm_render.py`.
+
+### Objects
+
+Object sets are `<climate>/<name>.rs2` + `<name>.pl`. `.rs2` = u32 count, u32 offsets[count + 1], then frames.
+`fre`, `trop` (roads and rails), `vor` and `pont` use the `.pck` colour frame format (kind `0xa2`).
+`tree`, `lay`, `stand`, `zabor`, `cliff`, `most`, `houses` use other frame encodings: to analyse.
+Roads drawn at (x, y) + frame anchor land in the right places but with saw-tooth edges: the anchoring or the
+ground stagger is still wrong somewhere.
 
 ## Other
 
