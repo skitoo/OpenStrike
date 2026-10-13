@@ -7,11 +7,13 @@
          kind 0xa1 / 0xa2 / 0xa9: colour sprite; 0xa3: shadow mask (0x00|n shadow, 0x80|n skip, n 7 bits);
          0xa5: unknown encoding (258 frames, not handled)
          then per row: u16 byte length, then commands until the row ends:
+         kind 0xa2 commands:
            0x00 | n  copy n palette pixels
            0x40 | n  copy n palette pixels blended 50 % with the background (anti-aliased edges)
            0x80 | n  repeat the next palette pixel n times
            0xC0 | n  skip n transparent pixels
-Blitter: cad800.dll 0x100044f5 (row loop), 0x100045ab copy, 0x100045d0 blend, 0x10004620 run.
+         kind 0xa1 / 0xa9 commands: 0x00 | n copy n pixels, 0x80 | n + colour byte (0 = skip) repeated n times
+Blitter: cad800.dll 0x10008edd dispatches by kind; 0x100044f5 (row loop), 0x100045ab copy, 0x100045d0 blend, 0x10004620 run.
 """
 import struct, zlib
 
@@ -61,6 +63,19 @@ def decode(frame, palette):
         x = i = 0
         while i < len(line):
             op = line[i]; i += 1
+            if kind in (0xa1, 0xa9):
+                # 7-bit counts (cad800.dll 0x10008f4c): copy n, or a colour byte (0 = skip) repeated n times
+                n = op & 0x7f
+                if op & 0x80:
+                    c, i = line[i], i + 1
+                    colours = [] if c == 0 else [c] * n
+                else:
+                    colours, i = line[i:i + n], i + n
+                for k, c in enumerate(colours):
+                    if x + k < w:
+                        pixels[y][x + k] = palette[c] + (OPAQUE,)
+                x += n
+                continue
             mode, n = op >> 6, op & 0x3f
             if mode == 3:
                 x += n
