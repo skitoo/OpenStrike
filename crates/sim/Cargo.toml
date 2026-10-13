@@ -1,0 +1,8 @@
+[package]
+name = "openstrike-sim"
+version = "0.1.0"
+description = "Deterministic game simulation: step(&World, &[Command]) -> World"
+edition.workspace = true
+repository.workspace = true
+
+[dependencies]
