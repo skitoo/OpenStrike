@@ -91,7 +91,8 @@ not read yet (the game reaches `cad800.dll` through a table handed over by the e
 To check against the screen: `cad640.dll`, `cad800.dll` and `cad1024.dll` all compute the same tint. A screenshot
 found on the Internet (version unknown) shows neutral shadows instead, about 0.64 times the lit colour (road
 (120, 114, 102) -> (78, 73, 65)); the formula above would give (57, 73, 90). A screenshot of Sudden Strike Gold
-itself is needed to settle it.
+itself is needed to settle it. The user remembers the game looking like that screenshot, so OpenStrike draws
+shadows at 0.64 of the lit colour, still once per pixel, until the difference with the code is explained.
 
 Unit files hold the colour frames first, then the shadows (BRON: 288 frames, shadows from 160, 64 of them).
 

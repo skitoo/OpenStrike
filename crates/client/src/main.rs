@@ -278,13 +278,12 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         {
-            // ((pixel & 0xf7de) >> 1) + 0x0085: half, then + 4/63 green and 5/31 blue
+            // shadowed pixels: 0.64 of the lit colour, measured on a screenshot of the original and
+            // matching how the game is remembered; the cad*.dll code reads as half plus a blue-green
+            // tint instead (see docs/formats.md)
             let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
             let mut b = d.begin_blend_mode(BlendMode::BLEND_MULTIPLIED);
-            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(128, 128, 128, 255));
-            drop(b);
-            let mut b = d.begin_blend_mode(BlendMode::BLEND_ADDITIVE);
-            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(0, 16, 41, 255));
+            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(163, 163, 163, 255));
         }
         {
             let mut m = d.begin_mode2D(camera2d);
