@@ -225,6 +225,7 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
+| `0x10058c20`, `0x10058d20` | mount the archives of `DataPathScm0_<i>` and `DataPathScm<climate + 1>_<i>` (`[0x10298d28]` = climate), `i` up to the first empty key; `0x10093590` splits on `;`; `0x10093090` files each entry in the 4096-slot table `0x103895e8` (32-byte entries), keeping the first one for a name unless the archive had the `^` prefix |
 | `cad800.dll` `0x100044f5` | sprite RLE blitter (`0xa2` format); `0x10001c13` colour key `0xF81F` |
 | `cad800.dll` `0x10008edd` | sprite dispatcher by kind: `0xa1` `0x10008f4c`, `0xa2` `0x100095a6`, `0xa3` `0x100098db`, `0xa9` `0x10009228` |
 | `cad800.dll` `0x10009228` | `0xa9` blitter: palette entries are u32 (`[ebx + 4 * index]`, the others read u16), background weight `entry >> 19 & 31` (31: pixel skipped), field mask `[0x10010084]` = `G << 16 \| R \| B` (set by `0x100053d3`, `0x100067bd`), pixel = `((split(bg) * k) >> 5 & mask)` recombined + `entry & 0xffff` |

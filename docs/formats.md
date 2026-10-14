@@ -26,6 +26,20 @@ Analysed version: Sudden Strike Gold (Steam), 510 MB.
 Reader: `Game_Dll.dll` `0x10092ea0` (opens an archive, checks the `FZFS` magic `0x53465a46`, loads the directory).
 Directory blocks are read by `0x10093010`; entries are inserted into a 4096-slot hash table by `0x10093090`.
 Up to 16 archives can be mounted. A `^` prefix on the path forces overriding entries already present.
+
+**Which archives are mounted.** The keys of `SudTest.ini` (`[Game]`, names from `text_dll.dll` string 44
+`DataPathScm%i_%i`): `DataPathScm0_<i>` at start-up (`0x10058c20`), then `DataPathScm<climate + 1>_<i>` for a map
+(`0x10058d20`, climate = map header byte 4: summer 0, winter 1, beach 2, desert 3), for `i` = 0, 1, ... up to the
+first missing or empty key (32 at most); each value is a `;`-separated list mounted in order by `0x10093590`. A
+name already in the hash table keeps its first entry (unless the archive has the `^` prefix), so **the first archive
+listed wins** (beach: `beach.sue` before `summer.sue` for `mappic.rs2` and `rhomb.pl`; `units.sue` before
+`animats.sue` for `str.col`) and the `_1` keys of the shipped `SudTest.ini`, which mount `common.sue`, `summer.sue`
+and `winter.sue` again, change nothing (`DataPathScm3_2` is never read, `3_1` being absent). `menu.sue` comes from
+`MenuResource`, the briefings from `BriefingsDir`. **`common01.sue`, `summer01.sue`, `winter01.sue` and
+`menu01.sue` are named by no key and never opened**, neither by the game nor by the editor (`editor2.ini` lists
+`desc_*`, `common`, `units_edit`, the climate and `*_edit` archives): they are older copies of the same data
+(unit descriptions written out instead of `#include`d, 206 of the 446 `common01` files differ from `common`).
+OpenStrike mounts from `SudTest.ini` the same way (`crates/formats/src/ini.rs`, `crates/client/src/assets.rs`).
 Extractor: `tools/sue_extract.py`, verified on all 24 archives (2,943 files, sizes checked).
 
 ```
@@ -221,7 +235,7 @@ Rules read in `Game_Dll.dll`:
 
 Water cells use rhombs whose pixels sit in palette indices 146-156, which are dark green in every `rhomb.pl`
 palette: the in-game water is most likely that dark green (the minimap draws it blue).
-Waves are animated overlays: `common01/misc/WAVES` (`wave water 8 wolny fl_lay ...`) and
+Waves are animated overlays: `desc_common/misc/WAVES` (`wave water 8 wolny fl_lay ...`) and
 `animat/WOLNY` (`woln1`, `woln2`, `woln3`, animations in `animats/woln*.ani` + `.col`). Not rendered yet.
 
 ### Objects

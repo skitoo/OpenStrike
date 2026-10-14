@@ -7,6 +7,7 @@ pub mod curves;
 pub mod desc;
 mod error;
 pub mod hot;
+pub mod ini;
 pub mod iso;
 pub mod map;
 pub mod objects;

@@ -105,3 +105,15 @@ fn the_platoon_loads() {
     let speeds: Vec<i32> = a.vehicles.iter().map(|v| v.unit_type.speed(0x8000)).collect();
     assert_eq!(speeds[..3], [384, 371, 243]);
 }
+
+#[test]
+fn the_first_archive_listed_in_sudtest_ini_wins() {
+    let Some(dir) = data_dir() else { return };
+    let archive = |name: &str| openstrike_formats::sue::Archive::parse(std::fs::read(dir.join(name)).unwrap()).unwrap();
+    let beach = assets::mount(&dir, "beach").unwrap();
+    // DataPathScm3_0=beach.sue;summer.sue;...: the beach ground, not the summer one
+    assert_eq!(beach.require("mappic.rs2").unwrap(), archive("beach.sue").read("mappic.rs2").unwrap().unwrap());
+    assert_ne!(beach.require("mappic.rs2").unwrap(), archive("summer.sue").read("mappic.rs2").unwrap().unwrap());
+    // units.sue comes before animats.sue
+    assert_eq!(beach.require("str.col").unwrap(), archive("units.sue").read("str.col").unwrap().unwrap());
+}

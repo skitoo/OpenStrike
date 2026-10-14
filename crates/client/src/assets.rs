@@ -1,7 +1,8 @@
 //! Loading game data into plain values, before anything touches the GPU.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
+use openstrike_formats::ini::Ini;
 use openstrike_formats::{curves, desc, hot};
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
@@ -49,25 +50,52 @@ pub struct Assets {
 
 pub const CLIMATES: [&str; 4] = ["beach", "desert", "summer", "winter"];
 
-/// The archives the game mounts (`sudtest.ini`, `DataPathScm*_0`): the shared ones, then the
-/// climate's, the first listed taking precedence. `common01`, `summer01`, `winter01`, `menu01` and
-/// the `_edit` archives are not listed; how the game uses them is not read yet.
-fn archives(climate: &str) -> Vec<&'static str> {
-    let mut list = vec!["common", "units", "animats", "desc_common"];
-    list.extend(match climate {
-        "winter" => ["winter", "desc_winter"].as_slice(),
-        "beach" => ["beach", "summer", "desc_summer"].as_slice(),
-        "desert" => ["desert", "desc_desert"].as_slice(),
-        _ => ["summer", "desc_summer"].as_slice(),
-    });
-    list
+/// Data scheme of a climate: 1 + the map's climate byte (summer 0, winter 1, beach 2, desert 3).
+fn scheme(climate: &str) -> u32 {
+    match climate {
+        "winter" => 2,
+        "beach" => 3,
+        "desert" => 4,
+        _ => 1,
+    }
 }
 
-/// Mount the archives of `climate` (later mounts win, so the list is mounted in reverse).
+/// A file of the install, whatever the case of its name (the game runs on Windows).
+fn find_file(dir: &Path, name: &str) -> Result<PathBuf, Error> {
+    for entry in std::fs::read_dir(dir)? {
+        let path = entry?.path();
+        if path.file_name().is_some_and(|n| n.to_string_lossy().eq_ignore_ascii_case(name)) {
+            return Ok(path);
+        }
+    }
+    Err(format!("{name} not found in {}", dir.display()).into())
+}
+
+/// Mount the archives the game mounts for `climate`, read from `SudTest.ini` as the game does
+/// ([`Ini::data_paths`] of scheme 0, then of the climate's scheme). The game files every entry in
+/// one table when an archive is mounted and keeps the first archive's entry for a name met again
+/// (`Game_Dll.dll` `0x10093090`; an archive name starting with `^` would replace it instead), so
+/// the first archive listed wins and mounting one again changes nothing. Archives no key names,
+/// such as `common01.sue`, `summer01.sue`, `winter01.sue`, `menu01.sue` (older copies of the same
+/// data) and the editor's `*_edit.sue`, are never read.
 pub fn mount(data_dir: &Path, climate: &str) -> Result<Vfs, Error> {
+    let ini = Ini::parse(&String::from_utf8_lossy(&std::fs::read(find_file(data_dir, "SudTest.ini")?)?));
+    let mut names: Vec<String> = Vec::new();
+    for name in ini.data_paths(0).into_iter().chain(ini.data_paths(scheme(climate))) {
+        if name.starts_with('^') {
+            return Err(format!("archive {name}: the ^ override prefix is not supported").into());
+        }
+        if !names.iter().any(|n| n.eq_ignore_ascii_case(&name)) {
+            names.push(name);
+        }
+    }
+    if names.is_empty() {
+        return Err("no DataPathScm keys in SudTest.ini".into());
+    }
+    // later mounts win in the Vfs, so mount the list in reverse
     let mut vfs = Vfs::default();
-    for name in archives(climate).into_iter().rev() {
-        vfs.mount(Archive::parse(std::fs::read(data_dir.join(format!("{name}.sue")))?)?);
+    for name in names.iter().rev() {
+        vfs.mount(Archive::parse(std::fs::read(find_file(data_dir, name)?)?)?);
     }
     Ok(vfs)
 }
