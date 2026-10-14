@@ -153,7 +153,8 @@ Decoder: `crates/formats/src/hot.rs`. Other vehicles have more points (`bron.hot
 ## Interface pictures `common/intrpic.dat`
 
 `.pck` layout with a frame count (87 frames), palette `common/intr.pl`; loaded by `Game_Dll.dll` `0x10072fc3`.
-Frame 1 is the panel (352 x 136: minimap rhomb, 3 x 3 command grid, menu button), which the game opens as the
+Frame 0 is not a picture but the panel's layout, 16-byte records of four i32 (the window's `+0x60`): records 1-8
+look like button rectangles (x0, y0, x1, y1), record 10 is the minimap origin (132, 6). Frame 1 is the panel (352 x 136: minimap rhomb, 3 x 3 command grid, menu button), which the game opens as the
 `PANL` window in the bottom left corner of the screen (`0x1006f540`); frame 2 a 352 x 15 strip, frame 5 the
 368 x 32 message bar (filter buttons L, EX, A, A), frames 15 and up buttons and command icons (two or three
 states each), frames 11-13 nested collections (fonts and markers drawn over units, used as `+0x30`, `+0x34`).
@@ -162,8 +163,22 @@ The minimap (`0x1006eef0`) fills the panel's rhomb: widget pixel `(px, py)` show
 `(py + px / 2, py - px / 2)` (arithmetic shifts) when the cell is at least 4 cells from the edge (else the panel
 shows through), darkened to `(c >> 1) & mask` when the player does not see it. The widget's vertical origin is
 `(bottom - (w + h) / 2 - top + 1) >> 1` in the panel (`/ 4` for maps over 128 cells, which use the halved preview
-and minimap scale, `0x1006e5c0`); its horizontal origin comes from a panel value not traced yet, 132 by the
-panel picture. A click moves the view to the cell (`0x1006f3f2`).
+and minimap scale, `0x1006e5c0`); its horizontal origin is layout record 10 (`0x1006f5b9`). A click moves the
+view to the cell (`0x1006f3f2`).
+
+Then the frame of the view (`0x1006eb8f`-`0x1006ed7f`): the minimap being the game's screen scaled by 1/32
+(1/64 halved), the view's top left (`[0x10382904]`, `[0x10382900]`, screen coordinates where map pixel (x, y) is
+at x - y) and the screen size (`[0x103828fc]`, `[0x103828f8]`) are each shifted right by 5 (6), and the outline
+drawn as two rows and two columns (`0x1006ee80`, `0x1006e4c0`, `0x1006e540`) in `user.pl` colour 97 (white, green
+in the winter `user.pl`). Those lines only write the pixels the widget owns in the window's ownership map
+(`+0x4c`, one byte per pixel holding a widget id; the minimap's is 1, `0x1006e450`): its init (`0x1006e640`)
+marks pixel `(x - y, (x + y) >> 1)` of each preview cell `4 <= x < (w - 4) >> halved` (same for y).
+
+## Interface colours `user.pl`
+
+256 RGB565 colours per climate, loaded by `Game_Dll.dll` `0x10082240` into `0x10387cb0`. Entry 96 is used by
+`0x10070499` (likely the selection rectangle), 97 by the minimap's view frame; `0x10387d2c` (entry 62 onwards) is
+passed as a palette to the text drawing.
 
 ## Maps
 

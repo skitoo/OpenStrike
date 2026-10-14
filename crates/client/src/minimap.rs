@@ -11,10 +11,12 @@ use openstrike_formats::palette::rgb565;
 /// The panel picture (`intrpic.dat` frame 1, 352 x 136) and where the game puts it: the bottom
 /// left corner of the screen (`0x1006f540`).
 pub const PANEL_SIZE: (i32, i32) = (352, 136);
-/// Horizontal origin of the minimap widget in the panel. The game takes it from a panel resource
-/// value not traced yet (`0x1006f5c8`); 132 is the middle column of the panel picture's black
-/// rhomb, which the formula fills exactly.
+/// Horizontal origin of the minimap widget in the panel: entry 10 of the panel's layout
+/// (`intrpic.dat` frame 0, 16-byte records, read at `0x1006f5b9`), (132, 6); the 6 is not used.
 pub const ORIGIN_X: i32 = 132;
+/// Entry of `user.pl` the view frame is drawn in (`[0x10387d72]`, the palette being loaded at
+/// `0x10387cb0` by `0x10082240`): white, green in winter.
+pub const FRAME_COLOUR: usize = 97;
 /// Size of the minimap image, covering `px` in `-ORIGIN_X..WIDTH - ORIGIN_X`.
 pub const WIDTH: i32 = 264;
 pub const HEIGHT: i32 = 136;
@@ -75,4 +77,32 @@ pub fn target(map: &Map, x: i32, y: i32) -> Option<(i32, i32)> {
     }
     let scale = if halved(map) { 64 } else { 32 };
     Some((c.0 * scale + scale / 2, c.1 * scale + scale / 2))
+}
+
+/// Whether the minimap widget owns widget pixel `(px, py)`, the only pixels its lines are drawn
+/// on (`0x1006e4c0`, `0x1006e540`). Its init (`0x1006e640`) marks one pixel per preview cell
+/// `(x, y)` with `4 <= x < (width - 4) >> halved` and the same for `y`: pixel
+/// `(x - y, (x + y) >> 1)`.
+fn owned(map: &Map, px: i32, py: i32) -> bool {
+    let s = halved(map) as u32;
+    let (w, h) = ((map.width as i32 - 4) >> s, (map.height as i32 - 4) >> s);
+    // the one cell landing there: x - y = px and x + y = 2 py + (px & 1)
+    let x = py + ((px + 1) >> 1);
+    let y = x - px;
+    (4..w).contains(&x) && (4..h).contains(&y)
+}
+
+/// The frame of the view on the minimap (`0x1006eb8f`-`0x1006ed7f`), as panel pixels. `view` is
+/// the top left of the view in the game's screen coordinates (map pixel `(x, y)` at `x - y`,
+/// `(x + y) / 2`) and `size` its size, both scaled down by 32 (64 for halved maps) with arithmetic
+/// shifts, the minimap being the game's screen at that scale. The outline is drawn as
+/// `0x1006ee80` does, top and bottom rows then left and right columns, each pixel only where the
+/// widget owns it.
+pub fn frame(map: &Map, view: (i32, i32), size: (i32, i32)) -> Vec<(i32, i32)> {
+    let s = 5 + halved(map) as u32;
+    let (x0, y0, w, h) = (view.0 >> s, view.1 >> s, size.0 >> s, size.1 >> s);
+    let rows = [y0, y0 + h - 1].into_iter().flat_map(|y| (x0..x0 + w).map(move |x| (x, y)));
+    let columns = [x0, x0 + w - 1].into_iter().flat_map(|x| (y0..y0 + h).map(move |y| (x, y)));
+    let oy = origin_y(map);
+    rows.chain(columns).filter(|&(x, y)| owned(map, x, y)).map(|(x, y)| (x + ORIGIN_X, y + oy)).collect()
 }

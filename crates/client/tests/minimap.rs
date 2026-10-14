@@ -1,4 +1,4 @@
-use openstrike::minimap::{cell, origin_y, render, target, HEIGHT, ORIGIN_X, WIDTH};
+use openstrike::minimap::{cell, frame, origin_y, render, target, HEIGHT, ORIGIN_X, WIDTH};
 use openstrike_formats::map::Map;
 
 fn map(size: u32) -> Map {
@@ -45,4 +45,38 @@ fn border_cells_leave_the_panel_visible() {
     assert_eq!(target(&m, ORIGIN_X, 4 + 64), Some((64 * 32 + 16, 64 * 32 + 16)));
     assert_eq!(target(&map(256), ORIGIN_X, 4 + 64), Some((64 * 64 + 32, 64 * 64 + 32)));
     assert_eq!(target(&m, ORIGIN_X, 4), None);
+}
+
+#[test]
+fn the_view_frame_is_the_screen_scaled_down() {
+    let m = map(128);
+    // view whose top left is map pixel (64 * 32, 64 * 32): game screen (0, 2048), 800 x 600
+    let pixels = frame(&m, (0, 64 * 32), (800, 600));
+    // 25 x 18 pixels at widget (0, 64), all inside the rhomb
+    let (x0, y0) = (ORIGIN_X, origin_y(&m) + 64);
+    assert!(pixels.contains(&(x0, y0)));
+    assert!(pixels.contains(&(x0 + 24, y0 + 17)));
+    assert!(!pixels.contains(&(x0 + 25, y0)));
+    assert!(!pixels.contains(&(x0 + 1, y0 + 1))); // hollow
+    assert_eq!(pixels.len(), 2 * 25 + 2 * 18);
+    // halved maps: 64 pixels per minimap pixel
+    let pixels = frame(&map(256), (0, 64 * 64), (800, 600));
+    assert!(pixels.contains(&(ORIGIN_X + 11, origin_y(&map(256)) + 64 + 8)));
+    assert!(!pixels.contains(&(ORIGIN_X + 12, origin_y(&map(256)) + 64)));
+}
+
+#[test]
+fn the_frame_is_only_drawn_on_the_widget() {
+    let m = map(128);
+    // top left corner of the map: cell (0, 0) is not the widget's, cell (4, 4) is
+    let pixels = frame(&m, (-400, 0), (800, 600));
+    let oy = origin_y(&m);
+    assert!(!pixels.contains(&(ORIGIN_X, oy)));
+    assert!(pixels.iter().all(|&(_, y)| y >= oy + 4));
+    // the widget's pixels: cell (x, y) at (x - y, (x + y) >> 1); (5, 4) gives (1, 4), (4, 5) (-1, 4)
+    let pixels = frame(&m, (-32, 4 * 32), (96, 32));
+    assert!(pixels.contains(&(ORIGIN_X - 1, oy + 4)));
+    assert!(pixels.contains(&(ORIGIN_X, oy + 4)));
+    assert!(pixels.contains(&(ORIGIN_X + 1, oy + 4)));
+    assert!(!pixels.contains(&(ORIGIN_X - 2, oy + 4))); // cell (3, 5)
 }

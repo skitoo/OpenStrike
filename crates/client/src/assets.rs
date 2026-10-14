@@ -53,6 +53,9 @@ pub struct Assets {
     /// The interface panel picture (`intrpic.dat` frame 1, palette `intr.pl`; loaded by
     /// `Game_Dll.dll` `0x10072fc3`).
     pub panel: Image,
+    /// The interface colours (`user.pl`, 256 RGB565 values; loaded by `Game_Dll.dll`
+    /// `0x10082240` into `0x10387cb0`).
+    pub user_colours: Palette,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -213,6 +216,7 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         vehicles,
         unit_classes,
         panel: interface_frame(&vfs, 1)?,
+        user_colours: Palette::parse(&vfs.require("user.pl")?)?,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })

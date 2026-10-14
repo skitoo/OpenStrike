@@ -486,6 +486,14 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             let s = ui_scale as f32;
             d.draw_texture_ex(&panel.texture, at(panel.anchor.0, panel.anchor.1), 0.0, s, Color::WHITE);
             d.draw_texture_ex(&minimap_texture, at(0, 0), 0.0, s, Color::WHITE);
+            // the view in the game's screen coordinates (no offset: map pixel (0, 0) at x 0)
+            let view_game = ((cam.x as i32) - proj.to_screen(0, 0).0, cam.y as i32);
+            let view_size = ((screen.0 / cam.zoom) as i32, (screen.1 / cam.zoom) as i32);
+            let [r, g, b] = assets.user_colours.colours[minimap::FRAME_COLOUR];
+            for (x, y) in minimap::frame(&assets.map, view_game, view_size) {
+                let p = at(x, y);
+                d.draw_rectangle(p.x as i32, p.y as i32, ui_scale, ui_scale, Color::new(r, g, b, 255));
+            }
         }
         d.draw_text(
             "Left click / drag: select (Shift adds)   Right click: move   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",
