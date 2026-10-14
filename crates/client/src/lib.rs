@@ -7,6 +7,7 @@ pub mod chunks;
 pub mod minimap;
 pub mod mission;
 pub mod options;
+pub mod orders;
 pub mod scene;
 pub mod selection;
 pub mod status;

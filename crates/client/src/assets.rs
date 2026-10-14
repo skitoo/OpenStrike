@@ -63,6 +63,10 @@ pub struct Assets {
     /// one for group value `v` (1-10, key `v - 1`) at `v - 1` (`Game_Dll.dll` `0x10009ff0` draws glyph
     /// `v + 0x2f`), in the palette of `user.pl` from entry 62 (`0x10387d2c`).
     pub group_digits: Vec<Image>,
+    /// The panel's layout (`intrpic.dat` frame 0): 16-byte records of x0, y0, x1, y1 in the panel.
+    pub layout: Vec<[i32; 4]>,
+    /// The pictures of the panel's buttons, `intrpic.dat` frames 29-86 by frame.
+    pub buttons: HashMap<usize, Image>,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -126,6 +130,19 @@ fn interface_frame(vfs: &Vfs, index: usize) -> Result<Image, Error> {
     let frames = sprite::pck_frames(&data)?;
     let frame = frames.get(index).ok_or("intrpic.dat: frame out of range")?;
     Ok(sprite::decode(frame, &palette)?)
+}
+
+/// See [`Assets::layout`].
+fn layout(vfs: &Vfs) -> Result<Vec<[i32; 4]>, Error> {
+    let data = vfs.require("intrpic.dat")?;
+    let frames = sprite::pck_frames(&data)?;
+    let frame = frames.first().ok_or("intrpic.dat: no frame 0")?;
+    Ok(frame
+        .as_chunks::<16>()
+        .0
+        .iter()
+        .map(|r| std::array::from_fn(|i| i32::from_le_bytes(r[4 * i..4 * i + 4].try_into().unwrap())))
+        .collect())
 }
 
 /// See [`Assets::group_digits`].
@@ -240,6 +257,8 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         panel: interface_frame(&vfs, 1)?,
         user_colours: Palette::parse(&vfs.require("user.pl")?)?,
         group_digits: group_digits(&vfs)?,
+        layout: layout(&vfs)?,
+        buttons: (29..=86).map(|i| Ok((i, interface_frame(&vfs, i)?))).collect::<Result<_, Error>>()?,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })

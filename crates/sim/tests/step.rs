@@ -203,3 +203,24 @@ fn a_place_held_by_another_unit_is_moved_along_the_spiral() {
     let w = World::new(units, 0);
     assert_eq!(group_targets(&r, &w.occupancy, &[&w.units[0]], (30, 30)), vec![(29, 29)]);
 }
+
+#[test]
+fn halte_stops_short_of_the_goal() {
+    let r = open();
+    let w = run(one_tank((10, 10), 0), &r, 60, &[move_to(30, 10)]);
+    let w = run(w, &r, 200, &[Command::Stop { units: vec![UnitId(1)] }]);
+    let u = &w.units[0];
+    assert_eq!((u.order, u.goal), (Order::Idle, None));
+    // it ends in the middle of a cell on the way, well before the goal
+    assert_eq!(u.sub, (0xf00, 0xf00));
+    assert!(u.cell.0 > 10 && u.cell.0 < 30, "{:?}", u.cell);
+    assert!(u.turret_wait <= 2);
+}
+
+#[test]
+fn hold_orders_set_the_unit_flags() {
+    let w = step(&one_tank((10, 10), 0), &open(), &[Command::HoldPosition { units: vec![UnitId(1)], on: true }]);
+    assert!(w.units[0].hold_position && !w.units[0].hold_fire);
+    let w = step(&w, &open(), &[Command::HoldFire { units: vec![UnitId(1)], on: true }, Command::HoldPosition { units: vec![UnitId(1)], on: false }]);
+    assert!(!w.units[0].hold_position && w.units[0].hold_fire);
+}

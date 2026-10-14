@@ -144,3 +144,14 @@ fn the_group_digits_are_the_interface_font() {
     assert_eq!(a.group_digits[1].width, 3);
     assert!(a.group_digits.iter().all(|d| d.rgba.chunks(4).any(|p| p[3] == 255)));
 }
+
+#[test]
+fn the_orders_grid_lies_on_the_panel() {
+    let Some(dir) = data_dir() else { return };
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
+    assert_eq!(a.layout[0x20], [266, 5, 290, 32]);
+    assert_eq!(a.layout[0x28], [322, 67, 346, 94]);
+    let b = &a.buttons[&51];
+    assert_eq!((b.width, b.height), (25, 28));
+    assert_eq!((a.buttons[&29].width, a.buttons[&32].width), (40, 32));
+}

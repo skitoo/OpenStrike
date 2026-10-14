@@ -199,6 +199,50 @@ held too, the group's other units leave it. Without (`0x10083400`), the group's 
 dropped unless Shift is held, then the others' units dropped if the local player's are among them; the same key
 again within the system's double-click time centres the view on the mean of the selected units' cells (times 32).
 
+## Orders grid
+
+The 3 x 3 orders grid of the panel (the manual's "menu d'ordres") and the two buttons above the minimap are built by
+`Game_Dll.dll` `0x10080fa0` from the capabilities of the selection, `[0x103880d4]`: the OR of each selected unit's
+vtable `+0x10` (`0x10083820`), plus `0x400000` in single player and `0x200000` when (`+0x20c`, type flag
+`0x8000`) both hold. Each place is a layout record of `intrpic.dat` frame 0 (records `0x20`-`0x28` the grid, from
+(266, 5) in 25 x 28 cells 28 / 31 pixels apart; 7 and 8 the two buttons) and gets a `checkbutton` (`0x100745c0`):
+command id, pictures (one per state, from the frame given), key, tooltip (`intrtext.dat` string `tip + 1`).
+A button shows its state's picture (`0x10072ad0`), state 0 once placed (`0x10072a00`), 1 while its order waits
+for a target; a key press (`0x10072d90`) or a click (`0x10072d50`) notifies the panel.
+
+Places `0x25`-`0x28` go through `0x10081a00` / `0x10081b00` (not read yet); their frame below is the argument
+that looks like one.
+
+| Place (key) | Capability -> command, picture frame, text |
+|---|---|
+| `0x20` (`key_00`) | `8` -> `0x13`, 51, AVANCER |
+| `0x21` (`key_01`) | `0x10` -> `0x14`, 53, ATTAQUER; else `0x800` -> `0x1c`, 73, REPARER / RECHARGER |
+| `0x22` (`key_02`) | `0x20` -> `0x15`, 55, ASSAUT |
+| `0x23` (`key_10`) | `0x1000` -> `0x1d`, 81, PIVOTER; else `0x4000` -> `0x22`, 77, POSER DES MINES; else `0x40000` -> `0x1e`, 67, POSER BARBELES |
+| `0x24` (`key_11`) | `0x400` / `0x100` / `0x200` / `0x800000` -> `0x19` / `0x18` / `0x1a` / `0x1b`, 59, DECHARGER; else `0x8000` -> `0xc`, 79, DEMINER; else `0x80000` -> `0x1f`, 69, CONSTRUIRE UN OBSTACLE ANTICHAR |
+| `0x25` (`key_12`) | `0x80` / `0x40` -> `0x17` / `0x16`, 57, PILONNAGE LONGUE PORTEE; `0x100000` -> `0x20`, 71, CONSTRUIRE UN PONT FLOTTANT; `0x2000000` -> `0x23`, 85 |
+| `0x26` (`key_20`) | `0x200000` -> `0x11`, 83, TRACTER CANON; else `0x10000` -> `0xf`, 63, A COUVERT; else `0x2000` -> `0x24`, 75, REPARER PONT |
+| `0x27` (`key_21`) | `0x20000` -> `0x10`, 65, DISPERSION |
+| `0x28` (`key_22`) | `4` -> `0xb`, 61, HALTE |
+| 7 (`key_HM`, R) | `1` -> `0xd`, 29-31, TENIR LA POSITION: state 0 all the selected units hold (`+0x1a & 0x10`), 1 some, 2 none |
+| 8 (`key_HF`, T) | `2` -> `0xe`, 32-34, SUSPENDRE LE FEU: likewise with `+0x1a & 0x20` |
+
+A tank's capabilities (`0x10014940`, `0x10010510`): 7, with `0x1008` more when it is not immobilised (`+0xb3`);
+`0x10` (and `0x20` if mobile) when it has the rounds for one of its weapons (`0x10016fa0`: the type's rounds per
+shot `+0xbdf` / `+0xc72` of ammunition kind `+0xbdb` / `+0xc6e`); `0x400` or `0x100` from two checks of its cell
+(vtable `+0x44`, `+0x34`). So a tank shows AVANCER, ATTAQUER, ASSAUT, PIVOTER, HALTE and the two buttons.
+
+Pressing a button (`0x10080150`, on `id - 0xb`): HALTE sends order 0xf at once (`0x1005df00` queues it with the
+selected units; executed by `0x1005f880`, each unit's vtable `+0xc0`, for a tank `0x10032690`: order queue freed,
+turret delay at least 2, weapon targets cleared, movement reset by `0x1002d240`, wanted heading = heading, order
+idle); TENIR LA POSITION and SUSPENDRE LE FEU send orders 0x55 / 0x54 with the new value, false when all the
+selected units have it already (`+0x174` / `+0x170` set bit 4 / 5 of `+0x1a`); the orders 0x13-0x24 are armed, or
+disarmed when pressed again (`0x10080ed0`), and the next target click gives them (`0x10080a0a`, by armed id), Shift
+keeping them armed. A button that disappears from the grid disarms its order.
+
+`common/intrtext.dat`: u32 offsets (the first one / 4 is their count), then NUL-terminated texts (cp1252),
+`~key_xx~` standing for the key's name: the tooltips and messages of the interface.
+
 ## Interface colours `user.pl`
 
 256 RGB565 colours per climate, loaded by `Game_Dll.dll` `0x10082240` into `0x10387cb0`. Entry 96 is used by

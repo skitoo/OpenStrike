@@ -14,9 +14,26 @@ use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
-use openstrike::{minimap, mission};
+use openstrike::{minimap, mission, orders};
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, status, terrain};
+
+/// The orders grid keys, `key_00`-`key_22` of `key.map`, by place: A Z E / Q S D / W X C on the
+/// AZERTY layout the install's `key.map` was made for, the top-left 3 x 3 block of the keyboard, which
+/// raylib names by its QWERTY letters.
+const GRID_KEYS: [KeyboardKey; 9] = [
+    KeyboardKey::KEY_Q,
+    KeyboardKey::KEY_W,
+    KeyboardKey::KEY_E,
+    KeyboardKey::KEY_A,
+    KeyboardKey::KEY_S,
+    KeyboardKey::KEY_D,
+    KeyboardKey::KEY_Z,
+    KeyboardKey::KEY_X,
+    KeyboardKey::KEY_C,
+];
+/// `key_HM` (R) and `key_HF` (T).
+const HOLD_KEYS: [KeyboardKey; 2] = [KeyboardKey::KEY_R, KeyboardKey::KEY_T];
 
 /// The group keys, `key_g0`-`key_g9` of `key.map`: groups 1-10.
 const DIGIT_KEYS: [KeyboardKey; 10] = [
@@ -192,8 +209,8 @@ fn draw_unit_shadow<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView,
 fn read_input(rl: &RaylibHandle) -> CameraInput {
     let key = |k| if rl.is_key_down(k) { 1.0 } else { 0.0 };
     let scroll = (
-        key(KeyboardKey::KEY_RIGHT) + key(KeyboardKey::KEY_D) - key(KeyboardKey::KEY_LEFT) - key(KeyboardKey::KEY_A),
-        key(KeyboardKey::KEY_DOWN) + key(KeyboardKey::KEY_S) - key(KeyboardKey::KEY_UP) - key(KeyboardKey::KEY_W),
+        key(KeyboardKey::KEY_RIGHT) - key(KeyboardKey::KEY_LEFT),
+        key(KeyboardKey::KEY_DOWN) - key(KeyboardKey::KEY_UP),
     );
     let drag = if rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_MIDDLE) {
         let d = rl.get_mouse_delta();
@@ -268,6 +285,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
     let panel = upload_sprite(&mut rl, &thread, &assets.panel);
+    let buttons: HashMap<usize, SpriteTexture> = assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
     let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
     let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
 
@@ -284,6 +302,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
     let mut selected: Vec<UnitId> = Vec::new();
     let mut groups = selection::Groups::new();
+    // the order waiting for a target (`[0x103880bc]`)
+    let mut armed: Option<u8> = None;
     // the last group key pressed and when, for the second press that centres the view
     let mut last_recall: Option<(u8, f64)> = None;
     let mut press: Option<(f32, f32)> = None;
@@ -325,6 +345,49 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             cam.x = sx as f32 - screen.0 / 2.0 / cam.zoom;
             cam.y = sy as f32 - screen.1 / 2.0 / cam.zoom;
         }
+        // the orders grid and the two hold buttons for the selection
+        let capabilities = orders::selection(world.units.iter().filter(|u| selected.contains(&u.id)).map(|u| {
+            // weapons are not read yet: every tank counts as armed
+            orders::tank(u.hp < rules.types[u.kind].move_damage_hp, true)
+        }));
+        let grid = orders::grid(capabilities);
+        if armed.is_some_and(|c| !grid.iter().flatten().any(|b| b.command == c)) {
+            armed = None;
+        }
+        let selected_units = || world.units.iter().filter(|u| selected.contains(&u.id));
+        let hold_states = [
+            orders::hold_state(selected_units().map(|u| u.hold_position)),
+            orders::hold_state(selected_units().map(|u| u.hold_fire)),
+        ];
+        let in_record = |r: [i32; 4], (x, y): (i32, i32)| x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+        let clicked = |r: usize| {
+            rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_some_and(|p| in_record(assets.layout[r], p))
+        };
+        let mut pressed: Vec<u8> = Vec::new();
+        for (place, button) in grid.iter().enumerate() {
+            if let Some(b) = button
+                && (rl.is_key_pressed(GRID_KEYS[place]) || clicked(orders::GRID_RECORD + place))
+            {
+                pressed.push(b.command);
+            }
+        }
+        for (k, (bit, command)) in [(orders::can::HOLD_POSITION, orders::HOLD_POSITION), (orders::can::HOLD_FIRE, orders::HOLD_FIRE)].into_iter().enumerate() {
+            if capabilities & bit != 0 && (rl.is_key_pressed(HOLD_KEYS[k]) || clicked(orders::HOLD_RECORDS[k])) {
+                pressed.push(command);
+            }
+        }
+        for command in pressed {
+            let units = selected.clone();
+            match command {
+                orders::HOLD_POSITION => pending.push(Command::HoldPosition { units, on: orders::toggled(hold_states[0]) }),
+                orders::HOLD_FIRE => pending.push(Command::HoldFire { units, on: orders::toggled(hold_states[1]) }),
+                c => match orders::press(c, armed) {
+                    orders::Press::Halt => pending.push(Command::Stop { units }),
+                    orders::Press::Arm(c) => armed = Some(c),
+                    orders::Press::Disarm => armed = None,
+                },
+            }
+        }
         let mut units: Vec<UnitView> = scene::units(&world, &proj);
 
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_none() {
@@ -337,9 +400,19 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             let own: Vec<UnitView> = units.iter().filter(|u| u.player == mission::HUMAN_PLAYER).cloned().collect();
             selected = selection::select(&selected, &own, start, mouse_world, add);
         }
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() && mouse_on_panel.is_none() {
+        // a right click gives the armed order, or moves; the orders other than AVANCER are not simulated
+        // yet and wait for a target that never comes
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT)
+            && !selected.is_empty()
+            && mouse_on_panel.is_none()
+            && armed.is_none_or(|c| c == orders::ADVANCE)
+        {
             let (x, y) = proj.to_map(mouse_world.0, mouse_world.1);
             pending.push(Command::Move { units: selected.clone(), to: cell_at(x as i32, y as i32) });
+            // Shift keeps the order armed (`0x10080e20`)
+            if !rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) && !rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT) {
+                armed = None;
+            }
         }
         if rl.is_key_pressed(KeyboardKey::KEY_B) {
             show_blocked = !show_blocked;
@@ -553,6 +626,22 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             let s = ui_scale as f32;
             d.draw_texture_ex(&panel.texture, at(panel.anchor.0, panel.anchor.1), 0.0, s, Color::WHITE);
             d.draw_texture_ex(&minimap_texture, at(0, 0), 0.0, s, Color::WHITE);
+            let mut draw_button = |frame: usize, record: usize| {
+                if let Some(b) = buttons.get(&frame) {
+                    let r = assets.layout[record];
+                    d.draw_texture_ex(&b.texture, at(r[0] + b.anchor.0, r[1] + b.anchor.1), 0.0, s, Color::WHITE);
+                }
+            };
+            for (place, button) in grid.iter().enumerate() {
+                if let Some(b) = button {
+                    draw_button(b.frame + (armed == Some(b.command)) as usize, orders::GRID_RECORD + place);
+                }
+            }
+            for (k, state) in hold_states.into_iter().enumerate() {
+                if capabilities & (1 << k) != 0 {
+                    draw_button(orders::HOLD_FRAMES[k] + state, orders::HOLD_RECORDS[k]);
+                }
+            }
             // the view in the game's screen coordinates (no offset: map pixel (0, 0) at x 0)
             let view_game = ((cam.x as i32) - proj.to_screen(0, 0).0, cam.y as i32);
             let view_size = ((screen.0 / cam.zoom) as i32, (screen.1 / cam.zoom) as i32);
@@ -572,7 +661,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         d.draw_text(
-            "Left click / drag: select (Shift adds)   Right click: move   Ctrl+0-9: group, 0-9: recall   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",
+            "Left click / drag: select (Shift adds)   Right click: move   Ctrl+0-9: group, 0-9: recall   Arrows, middle drag: scroll   Wheel: zoom   B: blocked",
             10,
             10,
             20,

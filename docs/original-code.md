@@ -182,6 +182,9 @@ none/track/whell), `movespeed` (`+0xb33`, `+0xb37`), `expa_crush` (`+0xb3b`, `+0
 | `0x1003e870` | read | may a group order send this unit to this cell |
 | `0x10032060` | read | append an order record |
 | `0x10068900` | read | list the units of an AI team (byte 0 of the map record, `+0x5a`; teams of 0xb4 bytes from `0x1034d718`) |
+| `0x10080fa0`, `0x10083820` | read | orders grid from the selection's capabilities (see `docs/formats.md`, "Orders grid") |
+| `0x10080150`, `0x10080a0a` | read | panel button pressed (switch on id - 0xb); target click for the armed order |
+| `0x1005df00`, `0x1005e070`, `0x1005eda2` | read | order queue (code, selected units, modifiers) and its execution switch (code - 0xf) |
 | `0x100837b0`, `0x10083400` | read | group keys: assign the selection to a group, recall a group (see `docs/formats.md`, `key.map`) |
 
 ## Map objects and drawing

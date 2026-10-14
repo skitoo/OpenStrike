@@ -230,6 +230,10 @@ pub struct Unit {
     /// Cell the movement code heads for (`+0xa8`, `+0xa9`).
     pub goal: Option<(i16, i16)>,
     pub moving: bool,
+    /// TENIR LA POSITION: does not move by itself to attack (bit 4 of `+0x1a`).
+    pub hold_position: bool,
+    /// SUSPENDRE LE FEU: does not fire by itself (bit 5 of `+0x1a`).
+    pub hold_fire: bool,
 }
 
 impl Unit {
@@ -258,6 +262,8 @@ impl Unit {
             order: Order::Idle,
             goal: None,
             moving: false,
+            hold_position: false,
+            hold_fire: false,
         }
     }
 
@@ -271,6 +277,12 @@ impl Unit {
 pub enum Command {
     /// Move units to a cell, each to its own place around it (see [`group_targets`]).
     Move { units: Vec<UnitId>, to: (i16, i16) },
+    /// HALTE (order 0xf, `0x1005f880`): every unit drops its orders (see [`stop`]).
+    Stop { units: Vec<UnitId> },
+    /// TENIR LA POSITION (order 0x55, the unit's `+0x174`: bit 4 of `+0x1a`).
+    HoldPosition { units: Vec<UnitId>, on: bool },
+    /// SUSPENDRE LE FEU (order 0x54, `+0x170`: bit 5 of `+0x1a`).
+    HoldFire { units: Vec<UnitId>, on: bool },
 }
 
 /// Whether a group order may send a unit to a cell (`0x1003e870`, vehicles): inside the border,
@@ -440,16 +452,36 @@ fn stop_moving(unit: &mut Unit) {
     unit.path = PathState::default();
 }
 
+/// Drop every order (the tank's vtable `+0xc0`, `0x10032690`): the order queue is freed, the
+/// turret waits at least 2 ticks (`0x1000f6d0`), the weapon targets are cleared, the movement ends
+/// (`0x1002d240`: no goal, path reset), the wanted heading becomes the current one and the order
+/// idle (`0x1002ccd0`, `0x10032b10`). A unit between two cells still drives to the next one.
+fn stop(unit: &mut Unit) {
+    unit.turret_wait = unit.turret_wait.max(2);
+    stop_moving(unit);
+    unit.desired = unit.facing;
+    unit.order = Order::Idle;
+}
+
 /// Advance the world by one tick.
 pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
     let mut w = world.clone();
-    for Command::Move { units, to } in commands {
-        // the selection list is built by prepending while walking the unit list (`0x10068900`)
-        let group: Vec<usize> = (0..w.units.len()).rev().filter(|&i| units.contains(&w.units[i].id)).collect();
-        let members: Vec<&Unit> = group.iter().map(|&i| &w.units[i]).collect();
-        let places = group_targets(rules, &w.occupancy, &members, *to);
-        for (i, place) in group.into_iter().zip(places) {
-            order_move(&mut w.units[i], place);
+    for command in commands {
+        match command {
+            Command::Move { units, to } => {
+                // the selection list is built by prepending while walking the unit list (`0x10068900`)
+                let group: Vec<usize> = (0..w.units.len()).rev().filter(|&i| units.contains(&w.units[i].id)).collect();
+                let members: Vec<&Unit> = group.iter().map(|&i| &w.units[i]).collect();
+                let places = group_targets(rules, &w.occupancy, &members, *to);
+                for (i, place) in group.into_iter().zip(places) {
+                    order_move(&mut w.units[i], place);
+                }
+            }
+            Command::Stop { units } => w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(stop),
+            Command::HoldPosition { units, on } => {
+                w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_position = *on)
+            }
+            Command::HoldFire { units, on } => w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_fire = *on),
         }
     }
     for i in 0..w.units.len() {
