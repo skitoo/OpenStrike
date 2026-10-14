@@ -86,18 +86,23 @@ the data: each kind's rows end exactly on their byte length with its own format,
 Reading `0xa1` sprites with the `0xa2` format (as OpenStrike did before) cuts rows apart: bits of ships and cranes
 float beside them.
 
-Shadow frames (`0xa3`, blitters `0x10007938` and `0x100098db`) use 1-bit modes with 7-bit counts: `0x00 | n` is n
-shadow pixels (n up to 127), `0x80 | n` skips n pixels. Each screen pixel has a 16-bit word (buffer `0x101f2e50`,
-800 x 600, filled with the row's depth `y << 5`): a shadow pixel is drawn only if the word has none of bits
-`0x8007`, then the shadow's flag is set in it and the pixel becomes `((p & 0xf7de) >> 1) + 0x0085` in RGB565 (half
-brightness, +4/63 green, +5/31 blue). So overlapping shadows darken once. Colour sprites drawn later on a pixel whose
-word has bit 1 set are darkened the same way (`0x10004c4b`); which shadows set bit 1 rather than another bit is
-not read yet (the game reaches `cad800.dll` through a table handed over by the executable).
-To check against the screen: `cad640.dll`, `cad800.dll` and `cad1024.dll` all compute the same tint. A screenshot
-found on the Internet (version unknown) shows neutral shadows instead, about 0.64 times the lit colour (road
-(120, 114, 102) -> (78, 73, 65)); the formula above would give (57, 73, 90). A screenshot of Sudden Strike Gold
-itself is needed to settle it. The user remembers the game looking like that screenshot, so OpenStrike draws
-shadows at 0.64 of the lit colour, still once per pixel, until the difference with the code is explained.
+Shadow frames (`0xa3`) use 1-bit modes with 7-bit counts: `0x00 | n` is n shadow pixels (n up to 127), `0x80 | n`
+skips n pixels. The map's shadow layer (6) is drawn by `Game_Dll.dll` `0x1006fdb0` through the driver entry
+`+0xa9d4`, i.e. `cad800.dll` `0x10007938` (the other layers use `+0xa9d0`, `0x100057ac`). Each screen pixel has a
+16-bit word (buffer `0x101f2e50` = back buffer `0x101081ec` + `0xeac64`, 800 x 600, filled with the row's depth
+`y << 5`): a shadow pixel is drawn only if the word has none of bits `0x8007`, then the shadow's flag is set in it
+and the pixel becomes `((p & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness, +4/63 green, +5/31 blue). So
+overlapping shadows darken once. Colour sprites drawn later on a pixel whose word has bit 1 set are darkened the
+same way (`0x10004c4b`); which shadows set bit 1 rather than another bit is not read yet.
+
+The tint comes from the screen's pixel format (`0x100013c5` reads the DirectDraw surface description and calls
+`0x10001130(R mask, G mask, B mask)`): `(5 << (11 - leading zeros of B)) + (2 << (11 - leading zeros of G))`, the
+lowest-bit mask `0x0821` and its complement `0xf7de` likewise. In RGB565 that is `0x0085`; in RGB555 `0x0045`, the
+same proportions. `cad640.dll` and `cad1024.dll` compute the same. The dispatcher's own `0xa3` path (`0x100098db`)
+tests the pixel itself instead of the word and is not used for the map's shadows.
+
+A screenshot found on the Internet (version unknown) shows neutral shadows, about 0.64 times the lit colour;
+OpenStrike drew that for a while, but follows the code now.
 
 Unit files hold the colour frames first, then the shadows (BRON: 288 frames, shadows from 160, 64 of them).
 

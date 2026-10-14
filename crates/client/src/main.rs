@@ -22,6 +22,26 @@ const PLATOON: [&str; 6] = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman
 /// Quarter of a cell, for the blocked overlay.
 const QUARTER: i32 = CELL_PX / 2;
 const SCREENSHOT_FRAMES: u32 = 200;
+/// Darkens the pixels under the shadow mask as the game does (`sprite::shade`, `cad800.dll`
+/// `0x10007938`, layer 6): on the RGB565 colour, halve each field (lowest bit dropped) and add
+/// `0x0085`, i.e. 4 to green and 5 to blue. The scene colours come from RGB565 (`palette::rgb565`).
+const SHADOW_SHADER: &str = r#"#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+uniform sampler2D mask;
+out vec4 finalColor;
+void main() {
+    vec4 c = texture(texture0, fragTexCoord);
+    if (texture(mask, fragTexCoord).a > 0.5) {
+        vec3 range = vec3(31.0, 63.0, 31.0);
+        vec3 f = floor(c.rgb * range + 0.5);
+        f = floor(f / 2.0) + vec3(0.0, 4.0, 5.0);
+        c.rgb = floor(f * 255.0 / range + 0.001) / 255.0;
+    }
+    finalColor = vec4(c.rgb, 1.0);
+}
+"#;
 
 fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[u8]) -> Texture2D {
     let image = Image::gen_image_color(w as i32, h as i32, Color::BLANK);
@@ -194,8 +214,12 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         selected = world.units.iter().map(|u| u.id).collect();
         pending.push(Command::Move { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
     }
-    // shadows are drawn into a mask, then applied once per pixel (see `sprite::shade`)
+    // the ground is drawn into `scene` and the shadows into a mask, then the shadow shader applies
+    // `sprite::shade` once per masked pixel
     let mut shadow_mask: Option<RenderTexture2D> = None;
+    let mut scene: Option<RenderTexture2D> = None;
+    let mut shadow_shader = rl.load_shader_from_memory(&thread, None, Some(SHADOW_SHADER));
+    let shadow_mask_loc = shadow_shader.get_shader_location("mask");
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
     let mut frame = 0u32;
@@ -248,8 +272,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         let (sw, sh) = (screen.0 as i32, screen.1 as i32);
         if shadow_mask.as_ref().is_none_or(|t| t.texture.width != sw || t.texture.height != sh) {
             shadow_mask = Some(rl.load_render_texture(&thread, sw as u32, sh as u32).expect("shadow mask"));
+            scene = Some(rl.load_render_texture(&thread, sw as u32, sh as u32).expect("scene"));
         }
         let mask = shadow_mask.as_mut().unwrap();
+        let scene = scene.as_mut().unwrap();
         let camera2d = Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
         let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
         {
@@ -264,10 +290,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
-        let mut d = rl.begin_drawing(&thread);
-        d.clear_background(Color::BLACK);
         {
-            let mut m = d.begin_mode2D(camera2d);
+            let mut t = rl.begin_texture_mode(&thread, scene);
+            t.clear_background(Color::BLACK);
+            let mut m = t.begin_mode2D(camera2d);
             for ((cx, cy), texture) in &ground {
                 if overlaps(view, cx * CHUNK, cy * CHUNK, CHUNK, CHUNK) {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
@@ -277,13 +303,16 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
         }
+
+        let mut d = rl.begin_drawing(&thread);
+        d.clear_background(Color::BLACK);
         {
-            // shadowed pixels: 0.64 of the lit colour, measured on a screenshot of the original and
-            // matching how the game is remembered; the cad*.dll code reads as half plus a blue-green
-            // tint instead (see docs/formats.md)
             let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
-            let mut b = d.begin_blend_mode(BlendMode::BLEND_MULTIPLIED);
-            b.draw_texture_rec(&*mask, source, Vector2::zero(), Color::new(163, 163, 163, 255));
+            let raw = *shadow_shader.as_ref();
+            let mut b = d.begin_shader_mode(&mut shadow_shader);
+            // SAFETY: binds the mask texture, alive for the whole frame, to the active shader
+            unsafe { raylib::ffi::SetShaderValueTexture(raw, shadow_mask_loc, mask.texture) };
+            b.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
         }
         {
             let mut m = d.begin_mode2D(camera2d);
