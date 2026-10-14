@@ -7,7 +7,7 @@
 use std::collections::{BTreeMap, HashMap};
 
 use openstrike_formats::map::Map;
-use openstrike_sim::{CREW_FULL, Unit, UnitId, World};
+use openstrike_sim::{CREW_FULL, Unit, UnitId, UnitType, World};
 
 /// The human player. **Assumption**, not read in the code: in single player the menu builds the
 /// players (`XCHNG\TOGAME\mplay_info`, written by `menu_dll.dll` `0x10018840`) from its session
@@ -25,6 +25,13 @@ pub fn crew_condition(percent: u8) -> i32 {
     ((((percent as i64) << 15) * 0x51eb_851f) >> 37).min(CREW_FULL as i64) as i32
 }
 
+/// Hit points and rounds from the map's percentages (`0x10040030`): `max(1, health% * Health /
+/// 100)` and `ammo% * Ammo1 / 100`, likewise for `Ammo2`.
+pub fn supplies(t: &UnitType, health: u8, ammo: u8) -> (i32, [i32; 2]) {
+    let hp = (health as i32 * t.health / 100).max(1);
+    (hp, t.ammo.map(|max| ammo as i32 * max / 100))
+}
+
 /// Cell of a vehicle placed at map pixel `(x, y)`: the game moves it to the cell's `(15, 15)`
 /// (`0x10040190`), which is where [`Unit::new`] puts a unit.
 pub fn vehicle_cell(x: i16, y: i16) -> (i16, i16) {
@@ -38,8 +45,8 @@ pub struct Start {
 }
 
 /// The starting world. `classes` maps lowercase type names to their class (`UNITS`), `kinds`
-/// lowercase type names to their index in the simulation's types.
-pub fn start(map: &Map, classes: &HashMap<String, String>, kinds: &HashMap<String, usize>) -> Start {
+/// lowercase type names to their index in `types`, the simulation's types.
+pub fn start(map: &Map, classes: &HashMap<String, String>, kinds: &HashMap<String, usize>, types: &[UnitType]) -> Start {
     let mut next_id: HashMap<u8, u32> = HashMap::new();
     let mut created = Vec::new();
     let mut skipped = BTreeMap::new();
@@ -54,6 +61,7 @@ pub fn start(map: &Map, classes: &HashMap<String, String>, kinds: &HashMap<Strin
                 let mut unit = Unit::new(unit_id, kind, vehicle_cell(u.x, u.y), u.heading & 31);
                 unit.player = u.player;
                 unit.crew = crew_condition(u.crew_condition);
+                (unit.hp, unit.ammo) = supplies(&types[kind], u.health, u.ammo);
                 created.push(unit);
             }
             _ => *skipped.entry(class.to_string()).or_insert(0) += 1,

@@ -49,6 +49,12 @@ pub struct UnitType {
     pub ignore_mines: bool,
     /// `CanMoveBackward`: may drive backwards when the next cell is behind.
     pub can_move_backward: bool,
+    /// `Health`: hit points when unhurt (`+0xb8`, 1 by default, `0x10046344`).
+    pub health: i32,
+    /// `Ammo1`, `Ammo2`: rounds of each kind when full (`+0xbc`, `+0xc0`).
+    pub ammo: [i32; 2],
+    /// `MoveDamageHP`: hit points under which a vehicle is immobilised (`+0xb47`).
+    pub move_damage_hp: i32,
 }
 
 impl UnitType {
@@ -66,6 +72,9 @@ impl UnitType {
             gun_turn_delay,
             ignore_mines: false,
             can_move_backward: false,
+            health: 1,
+            ammo: [0, 0],
+            move_damage_hp: 0,
         }
     }
 
@@ -198,6 +207,10 @@ pub struct Unit {
     pub player: u8,
     /// Crew condition, [`CREW_FULL`] when unhurt.
     pub crew: i32,
+    /// Hit points (`+0x37`).
+    pub hp: i32,
+    /// Rounds left of each kind (`+0x39`, `+0x3b`).
+    pub ammo: [i32; 2],
     pub cell: (i16, i16),
     /// Offset from the cell's top-left corner, 1/256 px; may leave the cell while driving out.
     pub sub: (i16, i16),
@@ -228,6 +241,8 @@ impl Unit {
             kind,
             player: 0,
             crew: CREW_FULL,
+            hp: 1,
+            ammo: [0, 0],
             cell,
             sub: centre,
             facing,

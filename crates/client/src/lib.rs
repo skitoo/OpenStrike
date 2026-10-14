@@ -9,4 +9,5 @@ pub mod mission;
 pub mod options;
 pub mod scene;
 pub mod selection;
+pub mod status;
 pub mod terrain;

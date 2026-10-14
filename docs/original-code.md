@@ -207,13 +207,15 @@ is set). Every shadow item has flag 1, so bit 1 is never set and upright objects
 
 Live units are not in the draw lists. Each frame (`0x100706d0`-`0x100707f9`): bit 2 of the pixel words cleared
 (`+0xaa4c`), the map picture copied to the screen buffer `cad800.dll` `0x1001d588` (`+0xa9d8`, `0x10001f90`),
-then three passes over the dynamic sprites (`0x10070d00`: records filed in 1024 buckets by depth + `0xa0` at
+then passes over the dynamic sprites (`0x10070d00`: records filed in 1024 buckets by depth + `0xa0` at
 `0x1037f55c`, prepended), each calling the unit's vtable entry for the record's flag bit: `0x10070fe0` bit 1
-(`+0x22c`), `0x10071190` bit 2 (`+0x230`), then `0x10070460` for bits 4 and 8 (`+0x234`, `+0x238`). A tank
-(flags 7, depth = its screen y): `0x1000ee30` draws frame `128 + heading` (tracks), `0x1000ed80` the hull and
+(`+0x22c`), then `0x10071190` bits 2, 4, 8, `0x10`, `0x20` in turn (`+0x230` to `+0x240`); then the selection
+rectangle (`0x10070460`). A tank (`0x1000ed32`: flags 7, `0xf` in one state of `+0xdb`, plus `0x10` when
+selected; depth = its screen y): `0x1000ee30` draws frame `128 + heading` (tracks), `0x1000ed80` the hull and
 turret shadows (`+0xaa0c`, `cad800.dll` `0x10007672`: skips pixels whose word has a bit of `0x8007`, i.e. already
 in a map or unit shadow, or upright objects whose depth sets bit 15; marks the word), `0x1000eeb0` the hull
-(frame `heading`) and the turret. Colour sprites use `+0xa9fc` (`cad800.dll` `0x10006f08`): a pixel is drawn only
+(frame `heading`) and the turret, `0x1000f0e0` (bit 8) another sprite pass, `0x10003580` (bit `0x10`) the status
+bars of a selected unit (see `docs/formats.md`, `user.pl`). Colour sprites use `+0xa9fc` (`cad800.dll` `0x10006f08`): a pixel is drawn only
 if the word pair `[pixel - 1, pixel]` is below `(depth + 0x440) << 5` in both halves, so upright objects whose sort
 y reaches the unit's hide it; units are not darkened by the map's shadows. With bit 13 of `+0xdb` (bit 7 of
 `+0x72` for single-sprite units) `+0xaa00` (`0x100072a2`) draws every other pixel (checkerboard on the row parity,

@@ -187,6 +187,16 @@ from that pixel (still on the widget's pixels only), one pixel being too small t
 (`64 + player`); `0x10387d2c` (entry 62 onwards) is
 passed as a palette to the text drawing.
 
+Entries 1-8 colour the status bars of a selected unit (`0x10003580`). With `W` the type's `Selector` (`+0xb4`,
+1 by default), the bars are `2W` wide from `x - W`, starting `3W / 4` (shifted) below the unit's ground point,
+each row a background in entry 1 then the filled part from the left (`0x10009ff0`). Rows from the top:
+`Ammo1` and `Ammo2` left (entry 5; local player's units only), the crew (entry 7, raised by half for veterans,
+with the crew's own condition over it in entry 8), then the hit points on two rows. Lengths (`0x10002cf0`) are
+`value * 2W / max`, 0x3f or more hiding a row. The hit points are entry 2, 3 under `MoveDamageHP` (half of
+`Health` for types without flag 8), 4 under a quarter of `Health`; entry 7 for an ally, 6 for an enemy
+(`0x10009ea0`). Over them the group number (glyph `n + 0x2f` of frame 13), and for the local player's units a
+row of 4 x 4 weapon boxes (`0x1000a2b0`).
+
 ## Maps
 
 Three gzip-compressed formats: `SSSM` single-player maps (`.ssm`, version `0x10f`, handled),

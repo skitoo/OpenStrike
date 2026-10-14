@@ -16,7 +16,7 @@ use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
 use openstrike::{minimap, mission};
 use openstrike::options::{self, Options, Parsed};
-use openstrike::{selection, terrain};
+use openstrike::{selection, status, terrain};
 
 /// Quarter of a cell, for the blocked overlay.
 const QUARTER: i32 = CELL_PX / 2;
@@ -258,7 +258,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
 
     let kinds = assets.vehicles.iter().enumerate().map(|(i, v)| (v.name.to_ascii_lowercase(), i)).collect();
-    let start = mission::start(&assets.map, &assets.unit_classes, &kinds);
+    let start = mission::start(&assets.map, &assets.unit_classes, &kinds, &rules.types);
     if !start.skipped.is_empty() {
         eprintln!("openstrike: units of classes not simulated yet, left out: {:?}", start.skipped);
     }
@@ -467,8 +467,25 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         d.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
         {
             let mut m = d.begin_mode2D(camera2d);
+            // the status bars of the selected units, in drawing order
             for u in units.iter().filter(|u| selected.contains(&u.id)) {
-                m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
+                let Some(unit) = world.units.iter().find(|w| w.id == u.id) else { continue };
+                let t = &rules.types[unit.kind];
+                let s = status::Status {
+                    // alliances are not read yet: every other player is an enemy
+                    owner: if unit.player == mission::HUMAN_PLAYER { status::Owner::Local } else { status::Owner::Enemy },
+                    hp: unit.hp,
+                    max_hp: t.health,
+                    damaged_below: t.move_damage_hp,
+                    crew: unit.crew,
+                    veteran: false,
+                    ammo: unit.ammo,
+                    max_ammo: t.ammo,
+                };
+                for l in status::bars(u.screen, assets.vehicles[u.kind].selector, &s) {
+                    let [r, g, b] = assets.user_colours.colours[l.colour];
+                    m.draw_rectangle(l.x, l.y, l.len, 1, Color::new(r, g, b, 255));
+                }
             }
             if show_blocked {
                 draw_blocked(&mut m, &rules.grid, &proj, view);

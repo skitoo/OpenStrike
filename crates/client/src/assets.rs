@@ -35,6 +35,9 @@ pub struct Vehicle {
     /// Description name (`units/<name>` in `desc_common`).
     pub name: String,
     pub unit_type: UnitType,
+    /// `Selector`: half the width of the status bars drawn under the unit when selected (`+0xb4`,
+    /// read by `0x10046d2f`; 1 by default).
+    pub selector: i32,
     pub sprites: VehicleSprites,
 }
 
@@ -121,8 +124,8 @@ fn interface_frame(vfs: &Vfs, index: usize) -> Result<Image, Error> {
     Ok(sprite::decode(frame, &palette)?)
 }
 
-/// Movement parameters and sprite file of a unit from its description.
-pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String), Error> {
+/// Simulation parameters, sprite file and `Selector` of a unit from its description.
+pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32), Error> {
     let d = desc::load(&format!("units/{name}"), &mut |n| vfs.read(n).ok().flatten())?;
     let missing = |key: &str| format!("{name}: no {key} in the description");
     let speed = (d.float("MoveSpeed", 0).ok_or_else(|| missing("MoveSpeed"))?, d.float("MoveSpeed", 1).ok_or_else(|| missing("MoveSpeed"))?);
@@ -130,13 +133,16 @@ pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String), Error> {
     let mut t = UnitType::new(name, speed, turn, d.int("GunTurnDelay", 0).unwrap_or(0));
     t.ignore_mines = d.int("IgnoreMines", 0).unwrap_or(0) != 0;
     t.can_move_backward = d.int("CanMoveBackward", 0).unwrap_or(0) != 0;
+    t.health = d.int("Health", 0).unwrap_or(t.health);
+    t.ammo = [d.int("Ammo1", 0).unwrap_or(0), d.int("Ammo2", 0).unwrap_or(0)];
+    t.move_damage_hp = d.int("MoveDamageHP", 0).unwrap_or(0);
     let file = d.get("File").and_then(|v| v.first()).ok_or_else(|| missing("File"))?.to_ascii_lowercase();
-    Ok((t, file))
+    Ok((t, file, d.int("Selector", 0).unwrap_or(1)))
 }
 
 pub fn vehicle(vfs: &Vfs, name: &str) -> Result<Vehicle, Error> {
-    let (unit_type, file) = unit_type(vfs, name)?;
-    Ok(Vehicle { name: name.to_string(), unit_type, sprites: vehicle_sprites(vfs, &file)? })
+    let (unit_type, file, selector) = unit_type(vfs, name)?;
+    Ok(Vehicle { name: name.to_string(), unit_type, selector, sprites: vehicle_sprites(vfs, &file)? })
 }
 
 pub fn vehicle_sprites(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {

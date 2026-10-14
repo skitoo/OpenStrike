@@ -112,7 +112,7 @@ fn the_mission_starts_with_its_own_tanks() {
     let Some(dir) = data_dir() else { return };
     let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
     let kinds = a.vehicles.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
-    let start = mission::start(&a.map, &a.unit_classes, &kinds);
+    let start = mission::start(&a.map, &a.unit_classes, &kinds, &a.vehicles.iter().map(|v| v.unit_type.clone()).collect::<Vec<_>>());
     let tanks = a.map.units.iter().filter(|u| a.unit_classes[&a.map.unit_types[u.kind as usize].to_ascii_lowercase()] == "tank").count();
     assert_eq!(start.world.units.len(), tanks);
     assert_eq!(start.skipped.values().sum::<usize>() + tanks, a.map.units.len());
