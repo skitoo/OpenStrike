@@ -194,16 +194,32 @@ per-set loaders, placements and drawings are listed in `docs/formats.md` (Object
 object in its cell (record: next u16, palette nibble and 8 px quarter bits, u16 word), `0x1006ffb0` / `0x1006f740`
 add a sprite to a layer's draw list (20-byte items: next, x, y, sort y, record, sprite, palette), sorted by sort y,
 y, x. Layers come from `land/<SET>` (`level`), read by each class (`0x100530c0` for `cliff`'s `level1`/`level2`).
-Units are objects of the `unit` class (instance `0x10294a70`, vtable `0x100abdcc`, records of 14 bytes at
-`0x10294a88`): its drawing `0x100562c0` calls the unit type's `+0x24` (`0x100068d0` vehicles, `0x1000d0d0`) with
-the class's layer `+0xc`, which `0x10052390` (vtable `+0x3c`, called by the generic `land\%s` reader
-`0x10052890` for every class) sets from `level`: 3 in `land/UNIT`. The colour sprite goes to that layer, the
-shadow to layer 6 with flag 1. Draw lists: heads at `0x1037f120 + 4 * layer`, tails at `0x1037f100 + 4 * layer`.
-Frame: ground, layers 0-5 (`0x1006fbf0`, `cad800.dll` `0x100057ac`, no pixel word), shadows (`0x1006fdb0`,
-`0x10007938`), upright layer 7 (driver `+0xa9c8`, `cad800.dll` `0x10005e41`: no depth test, writes
-`(sort y + 0x440) << 5` into the pixel word keeping bits 0-1, darkens the pixel when bit 1 is set). Every shadow
-item (map objects and units) has flag 1, so bit 1 is never set by a shadow: upright objects are never darkened,
-while units, drawn before the shadows, are darkened by all of them, their own included.
+Wrecks and corpses are objects of the `unit` class (instance `0x10294a70`, vtable `0x100abdcc`, ring of 1024
+records of 14 bytes at `0x10294a88`: unit type, x, y, frame; added by `0x10056360` when a vehicle is destroyed,
+`0x10024f5a`, with its hull heading, or a soldier dies, `0x1001b974`). Their drawing `0x100562c0` calls the unit
+type's `+0x24` (`0x100068d0` vehicles, `0x1000d0d0`) with the class's layer `+0xc`, which `0x10052390` (vtable
+`+0x3c`, called by the generic `land\%s` reader `0x10052890` for every class) sets from `level`: 3 in
+`land/UNIT`; the shadow goes to layer 6. Draw lists: heads at `0x1037f120 + 4 * layer`, tails at `0x1037f100`.
+The map picture (redrawn only where it changed): ground, layers 0-5 (`0x1006fbf0`, `cad800.dll` `0x100057ac`, no
+pixel word), shadows (`0x1006fdb0`, `0x10007938`), upright layer 7 (driver `+0xa9c8`, `cad800.dll` `0x10005e41`:
+no depth test, writes `(sort y + 0x440) << 5` into the pixel word keeping bits 0-1, darkens the pixel when bit 1
+is set). Every shadow item has flag 1, so bit 1 is never set and upright objects are never darkened.
+
+Live units are not in the draw lists. Each frame (`0x100706d0`-`0x100707f9`): bit 2 of the pixel words cleared
+(`+0xaa4c`), the map picture copied to the screen buffer `cad800.dll` `0x1001d588` (`+0xa9d8`, `0x10001f90`),
+then three passes over the dynamic sprites (`0x10070d00`: records filed in 1024 buckets by depth + `0xa0` at
+`0x1037f55c`, prepended), each calling the unit's vtable entry for the record's flag bit: `0x10070fe0` bit 1
+(`+0x22c`), `0x10071190` bit 2 (`+0x230`), then `0x10070460` for bits 4 and 8 (`+0x234`, `+0x238`). A tank
+(flags 7, depth = its screen y): `0x1000ee30` draws frame `128 + heading` (tracks), `0x1000ed80` the hull and
+turret shadows (`+0xaa0c`, `cad800.dll` `0x10007672`: skips pixels whose word has a bit of `0x8007`, i.e. already
+in a map or unit shadow, or upright objects whose depth sets bit 15; marks the word), `0x1000eeb0` the hull
+(frame `heading`) and the turret. Colour sprites use `+0xa9fc` (`cad800.dll` `0x10006f08`): a pixel is drawn only
+if the word pair `[pixel - 1, pixel]` is below `(depth + 0x440) << 5` in both halves, so upright objects whose sort
+y reaches the unit's hide it; units are not darkened by the map's shadows. With bit 13 of `+0xdb` (bit 7 of
+`+0x72` for single-sprite units) `+0xaa00` (`0x100072a2`) draws every other pixel (checkerboard on the row parity,
+`0x10010054`) regardless of depth. That bit is set (`0x1000ec1b`, `0x10003c37`) when the unit is selected (bit 8
+of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or within 256 of the mouse
+(`[0x103885a4]`, `[0x103885a8]` from `WM_MOUSEMOVE` at `0x10091ec4`; distance `0x10003550` on dx and 2 dy).
 
 
 | Address | What |

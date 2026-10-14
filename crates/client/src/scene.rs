@@ -63,12 +63,6 @@ impl ObjectPart {
     }
 }
 
-/// Layer of the units' colour sprites: `level` of `land/UNIT` (3), read into the `unit` class
-/// (`Game_Dll.dll` `0x10294a70` + `0xc`, by `0x10052390`) and passed to the draw lists by its
-/// drawing (`0x100562c0`). Their shadows go to layer 6 (`0x100068d0`). So units are drawn among the
-/// layer 3 objects, under the shadows (which darken them) and under every upright object.
-pub const LAYER_UNITS: u8 = 3;
-
 /// A unit as drawn: screen position and the sprite frames of its hull and turret headings.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UnitView {
@@ -81,10 +75,25 @@ pub struct UnitView {
 }
 
 impl UnitView {
-    /// Draw order among the ground layers (sort y and y are both the unit's screen y).
-    pub fn key(&self) -> (u8, i32, i32, i32) {
-        (LAYER_UNITS, self.screen.1, self.screen.1, self.screen.0)
+    /// Depth of the unit: its screen y. The game files its sprites in buckets by this value and
+    /// draws them in increasing order (`Game_Dll.dll` `0x10070d00`).
+    pub fn depth(&self) -> i32 {
+        self.screen.1
     }
+}
+
+/// Distance the game uses between a unit and the mouse cursor (`Game_Dll.dll` `0x10003550` on
+/// `dx` and `2 * dy` in screen pixels): the larger plus half the smaller, halves truncated.
+pub fn cursor_distance(unit: (i32, i32), mouse: (i32, i32)) -> i32 {
+    let (a, b) = ((unit.0 - mouse.0).abs(), (2 * (unit.1 - mouse.1)).abs());
+    if a > b { a + b / 2 } else { b + a / 2 }
+}
+
+/// Whether a unit shows through the upright objects in front of it, on every other pixel: when it
+/// is selected or within 256 of the cursor (`Game_Dll.dll` `0x1000ec1b`, bit 13 of `+0xdb`; the
+/// blitter `cad800.dll` `0x100072a2` then skips the depth test on a checkerboard).
+pub fn see_through(selected: bool, unit: (i32, i32), mouse: (i32, i32)) -> bool {
+    selected || cursor_distance(unit, mouse) < 256
 }
 
 /// Sprite frame for a map heading (0-31, clockwise from east): the heading is projected, then

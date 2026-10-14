@@ -16,6 +16,9 @@ pub type Error = Box<dyn std::error::Error>;
 /// Sprites of a turreted vehicle, each strip holding the 32 headings.
 pub struct VehicleSprites {
     pub hull: Vec<Image>,
+    /// Tracks and running gear (frames 128-159), drawn before the shadows: `Game_Dll.dll`
+    /// `0x1000ee30` reads frame `128 + heading` from the type's frame table (`+0xea6`).
+    pub tracks: Vec<Image>,
     pub hull_shadow: Vec<Image>,
     pub turret: Vec<Image>,
     pub turret_shadow: Vec<Image>,
@@ -109,6 +112,7 @@ pub fn vehicle_sprites(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
     mounts.truncate(32);
     Ok(VehicleSprites {
         hull: decode(0)?,
+        tracks: decode(128)?,
         hull_shadow: decode(hull_shadow)?,
         turret: decode(hull_shadow + 32)?,
         turret_shadow: decode(turret_shadow)?,

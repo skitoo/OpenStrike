@@ -94,7 +94,9 @@ skips n pixels. The map's shadow layer (6) is drawn by `Game_Dll.dll` `0x1006fdb
 and the pixel becomes `((p & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness, +4/63 green, +5/31 blue). So
 overlapping shadows darken once. The flag is the draw item's `+0x10`, 1 for every shadow (map objects and units).
 Upright sprites (layer 7, `0x10005e41`) drawn on a pixel whose word has bit 1 set would be darkened the same way,
-but no shadow sets bit 1, so they never are; units (layer 3) are drawn before the shadows and darkened by them.
+but no shadow sets bit 1, so they never are. Units are drawn later, on each frame, and are not darkened by the
+map's shadows; their own shadows (`0x10007672`) skip pixels already shadowed and upright objects (see
+`docs/original-code.md`, Map objects and drawing).
 
 The tint comes from the screen's pixel format (`0x100013c5` reads the DirectDraw surface description and calls
 `0x10001130(R mask, G mask, B mask)`): `(5 << (11 - leading zeros of B)) + (2 << (11 - leading zeros of G))`, the
@@ -121,7 +123,8 @@ Observed on `t-26.pck` (288 frames) with `t-26.hot` (64 points):
 | Frames | Content |
 |---|---|
 | 0-31 | hull, 32 headings |
-| 32-159 | hull variants (damage states? to check) |
+| 32-127 | hull variants (damage states? to check) |
+| 128-159 | tracks and running gear, drawn before the shadows (`Game_Dll.dll` `0x1000ee30`, type table `+0xea6`) |
 | 160-191 | hull shadows (first `0xa3` run) |
 | 192-223 | turret, 32 headings |
 | 224-255 | turret variants (to check) |

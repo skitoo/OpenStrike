@@ -22,18 +22,23 @@ const PLATOON: [&str; 6] = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman
 /// Quarter of a cell, for the blocked overlay.
 const QUARTER: i32 = CELL_PX / 2;
 const SCREENSHOT_FRAMES: u32 = 200;
-/// Darkens the pixels under the shadow mask as the game does (`sprite::shade`, `cad800.dll`
-/// `0x10007938`, layer 6): on the RGB565 colour, halve each field (lowest bit dropped) and add
+/// Darkens the pixels under `mask` as the game does (`sprite::shade`, `cad800.dll` `0x10007938`
+/// for the map's shadows, `0x10007672` for the units'), except where `skip_a` or `skip_b` is set
+/// (the units' shadows skip pixels already in a map shadow, flag bit 0, and upright objects, whose
+/// pixel word has bit 15): on the RGB565 colour, halve each field (lowest bit dropped) and add
 /// `0x0085`, i.e. 4 to green and 5 to blue. The scene colours come from RGB565 (`palette::rgb565`).
 const SHADOW_SHADER: &str = r#"#version 330
 in vec2 fragTexCoord;
 in vec4 fragColor;
 uniform sampler2D texture0;
 uniform sampler2D mask;
+uniform sampler2D skip_a;
+uniform sampler2D skip_b;
 out vec4 finalColor;
 void main() {
     vec4 c = texture(texture0, fragTexCoord);
-    if (texture(mask, fragTexCoord).a > 0.5) {
+    if (texture(mask, fragTexCoord).a > 0.5 && texture(skip_a, fragTexCoord).a < 0.5
+        && texture(skip_b, fragTexCoord).a < 0.5) {
         vec3 range = vec3(31.0, 63.0, 31.0);
         vec3 f = floor(c.rgb * range + 0.5);
         f = floor(f / 2.0) + vec3(0.0, 4.0, 5.0);
@@ -42,6 +47,65 @@ void main() {
     finalColor = vec4(c.rgb, 1.0);
 }
 "#;
+/// Records the depth of the upright objects (layer 7) per pixel, like the pixel word the game
+/// writes (`cad800.dll` `0x10005e41`: `(sort y + 0x440) << 5`): the sprite's tint carries the
+/// encoded sort y (see `depth_tint`), written wherever the sprite has a pixel.
+const DEPTH_SHADER: &str = r#"#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+out vec4 finalColor;
+void main() {
+    if (texture(texture0, fragTexCoord).a == 0.0) discard;
+    finalColor = vec4(fragColor.rgb, 1.0);
+}
+"#;
+/// Draws a unit sprite like `cad800.dll` `0x10006f08`: a pixel only where no upright object at the
+/// same or a greater depth is drawn (`0x1000713f`); with see-through (`0x100072a2`), every other
+/// pixel in a checkerboard regardless. The tint carries the unit's encoded depth and, in alpha,
+/// whether it sees through.
+const UNIT_SHADER: &str = r#"#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+uniform sampler2D depth;
+uniform vec2 size;
+uniform vec3 view; // camera x, y and zoom: the checkerboard is in game pixels
+out vec4 finalColor;
+float decode(vec3 v) { return floor(v.r * 255.0 + 0.5) * 256.0 + floor(v.g * 255.0 + 0.5); }
+void main() {
+    vec4 c = texture(texture0, fragTexCoord);
+    if (c.a == 0.0) discard;
+    vec4 d = texture(depth, gl_FragCoord.xy / size);
+    bool hidden = d.a > 0.5 && decode(d.rgb) >= decode(fragColor.rgb);
+    vec2 p = floor(view.xy + vec2(gl_FragCoord.x, size.y - gl_FragCoord.y) / view.z);
+    bool checker = (int(p.x + p.y) & 1) == 0;
+    if (hidden && !(fragColor.a > 0.5 && checker)) discard;
+    finalColor = c;
+}
+"#;
+/// Screen size and camera for the unit shader.
+///
+/// # Safety
+/// `shader` must be the active shader.
+unsafe fn set_unit_uniforms(shader: raylib::ffi::Shader, size_loc: i32, view_loc: i32, size: (i32, i32), cam: &Camera) {
+    use raylib::ffi::ShaderUniformDataType::{SHADER_UNIFORM_VEC2, SHADER_UNIFORM_VEC3};
+    let (size, view) = ([size.0 as f32, size.1 as f32], [cam.x, cam.y, cam.zoom]);
+    // SAFETY: the arrays outlive the calls and match the uniform types
+    unsafe {
+        raylib::ffi::SetShaderValue(shader, size_loc, size.as_ptr().cast(), SHADER_UNIFORM_VEC2 as i32);
+        raylib::ffi::SetShaderValue(shader, view_loc, view.as_ptr().cast(), SHADER_UNIFORM_VEC3 as i32);
+    }
+}
+
+/// Offset that keeps the encoded depths positive.
+const DEPTH_BIAS: i32 = 4096;
+
+/// A screen y (and a flag in alpha) encoded in a tint, for the depth and unit shaders.
+fn depth_tint(y: i32, flag: bool) -> Color {
+    let v = (y + DEPTH_BIAS).clamp(0, 0xffff);
+    Color::new((v >> 8) as u8, (v & 0xff) as u8, 0, if flag { 255 } else { 0 })
+}
 
 fn upload(rl: &mut RaylibHandle, thread: &RaylibThread, w: u32, h: u32, rgba: &[u8]) -> Texture2D {
     let image = Image::gen_image_color(w as i32, h as i32, Color::BLANK);
@@ -69,6 +133,7 @@ fn upload_strip(rl: &mut RaylibHandle, thread: &RaylibThread, sprites: &[Sprite]
 
 struct TankTextures {
     hull: Vec<SpriteTexture>,
+    tracks: Vec<SpriteTexture>,
     hull_shadow: Vec<SpriteTexture>,
     turret: Vec<SpriteTexture>,
     turret_shadow: Vec<SpriteTexture>,
@@ -92,10 +157,18 @@ fn draw_sprite<D: RaylibDraw>(d: &mut D, s: &SpriteTexture, at: (i32, i32), view
     }
 }
 
-fn draw_unit<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: Rect) {
+fn draw_sprite_tinted<D: RaylibDraw>(d: &mut D, s: &SpriteTexture, at: (i32, i32), view: Rect, tint: Color) {
+    let (x, y) = (at.0 + s.anchor.0, at.1 + s.anchor.1);
+    if overlaps(view, x, y, s.size.0, s.size.1) {
+        d.draw_texture(&s.texture, x, y, tint);
+    }
+}
+
+/// Hull then turret (`Game_Dll.dll` `0x1000eeb0`, the third drawing pass).
+fn draw_unit<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: Rect, tint: Color) {
     let mount = tank.mounts.get(u.frame).copied().unwrap_or_default();
-    draw_sprite(d, &tank.hull[u.frame], u.screen, view);
-    draw_sprite(d, &tank.turret[u.turret_frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view);
+    draw_sprite_tinted(d, &tank.hull[u.frame], u.screen, view, tint);
+    draw_sprite_tinted(d, &tank.turret[u.turret_frame], (u.screen.0 + mount.0, u.screen.1 + mount.1), view, tint);
 }
 
 fn draw_unit_shadow<D: RaylibDraw>(d: &mut D, tank: &TankTextures, u: &UnitView, view: Rect) {
@@ -185,6 +258,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             let s = &v.sprites;
             TankTextures {
                 hull: upload_strip(&mut rl, &thread, &s.hull),
+                tracks: upload_strip(&mut rl, &thread, &s.tracks),
                 hull_shadow: upload_strip(&mut rl, &thread, &s.hull_shadow),
                 turret: upload_strip(&mut rl, &thread, &s.turret),
                 turret_shadow: upload_strip(&mut rl, &thread, &s.turret_shadow),
@@ -214,12 +288,17 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         selected = world.units.iter().map(|u| u.id).collect();
         pending.push(Command::Move { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
     }
-    // the ground is drawn into `scene` and the shadows into a mask, then the shadow shader applies
-    // `sprite::shade` once per masked pixel
-    let mut shadow_mask: Option<RenderTexture2D> = None;
-    let mut scene: Option<RenderTexture2D> = None;
+    // Each frame, as the game composes the screen (`Game_Dll.dll` `0x100706d0`-`0x100707f9`): the
+    // map (ground, layers 0-5, map shadows, upright objects with their depths), then the units in
+    // three passes over all of them by depth: tracks, shadows, hull and turret.
+    let mut targets: Option<[RenderTexture2D; 6]> = None;
     let mut shadow_shader = rl.load_shader_from_memory(&thread, None, Some(SHADOW_SHADER));
-    let shadow_mask_loc = shadow_shader.get_shader_location("mask");
+    let shadow_locs = ["mask", "skip_a", "skip_b"].map(|n| shadow_shader.get_shader_location(n));
+    let mut depth_shader = rl.load_shader_from_memory(&thread, None, Some(DEPTH_SHADER));
+    let mut unit_shader = rl.load_shader_from_memory(&thread, None, Some(UNIT_SHADER));
+    let unit_depth_loc = unit_shader.get_shader_location("depth");
+    let unit_size_loc = unit_shader.get_shader_location("size");
+    let unit_view_loc = unit_shader.get_shader_location("view");
     let tick = 1.0 / TICKS_PER_SECOND as f32;
     let mut accumulator = 0.0f32;
     let mut frame = 0u32;
@@ -231,7 +310,6 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         let mouse = rl.get_mouse_position();
         let mouse_world = cam.screen_to_map(mouse.x, mouse.y);
         let mut units: Vec<UnitView> = scene::units(&world, &proj);
-        units.sort_by_key(UnitView::key);
 
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
             press = Some(mouse_world);
@@ -256,7 +334,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             accumulator -= tick;
         }
         units = scene::units(&world, &proj);
-        units.sort_by_key(UnitView::key);
+        // depth buckets, each filled by prepending while walking the unit list (`0x10070d00`)
+        units.reverse();
+        units.sort_by_key(UnitView::depth);
+        let mouse_screen = (mouse_world.0 as i32, mouse_world.1 as i32);
 
         let view = view_rect(&cam, screen);
         // drop the ground chunks far from the view, then rasterise a few missing ones, nearest first
@@ -270,26 +351,37 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let (sw, sh) = (screen.0 as i32, screen.1 as i32);
-        if shadow_mask.as_ref().is_none_or(|t| t.texture.width != sw || t.texture.height != sh) {
-            shadow_mask = Some(rl.load_render_texture(&thread, sw as u32, sh as u32).expect("shadow mask"));
-            scene = Some(rl.load_render_texture(&thread, sw as u32, sh as u32).expect("scene"));
+        if targets.as_ref().is_none_or(|t| t[0].texture.width != sw || t[0].texture.height != sh) {
+            targets = Some(std::array::from_fn(|_| rl.load_render_texture(&thread, sw as u32, sh as u32).expect("render target")));
         }
-        let mask = shadow_mask.as_mut().unwrap();
-        let scene = scene.as_mut().unwrap();
+        let [scene, composed, map_mask, depth, unit_mask, blank] = targets.as_mut().unwrap();
         let camera2d = Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
         let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
+        let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
         {
-            let mut t = rl.begin_texture_mode(&thread, mask);
+            let mut t = rl.begin_texture_mode(&thread, blank);
+            t.clear_background(Color::BLANK);
+        }
+        // map shadows (layer 6)
+        {
+            let mut t = rl.begin_texture_mode(&thread, map_mask);
             t.clear_background(Color::BLANK);
             let mut m = t.begin_mode2D(camera2d);
             for p in &objects.shadows {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
-            for u in &units {
-                draw_unit_shadow(&mut m, &vehicles[u.kind], u, view);
+        }
+        // depths of the upright objects (layer 7), later ones over earlier ones
+        {
+            let mut t = rl.begin_texture_mode(&thread, depth);
+            t.clear_background(Color::BLANK);
+            let mut m = t.begin_mode2D(camera2d);
+            let mut s = m.begin_shader_mode(&mut depth_shader);
+            for p in &objects.upright {
+                draw_sprite_tinted(&mut s, part(p), p.screen, view, depth_tint(p.sort_y, false));
             }
         }
-
+        // ground and layers 0-5
         {
             let mut t = rl.begin_texture_mode(&thread, scene);
             t.clear_background(Color::BLACK);
@@ -299,36 +391,82 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
             }
-            // layers 0-5, the units among layer 3
-            let mut units_left = units.iter().peekable();
             for p in &objects.ground {
-                while let Some(u) = units_left.next_if(|u| u.key() <= p.key()) {
-                    draw_unit(&mut m, &vehicles[u.kind], u, view);
-                }
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
-            for u in units_left {
-                draw_unit(&mut m, &vehicles[u.kind], u, view);
+        }
+        let tint = |u: &UnitView| depth_tint(u.depth(), scene::see_through(selected.contains(&u.id), u.screen, mouse_screen));
+        // map shadows applied, upright objects, then the units' first pass: their tracks
+        {
+            let mut t = rl.begin_texture_mode(&thread, composed);
+            {
+                let raw = *shadow_shader.as_ref();
+                let mut b = t.begin_shader_mode(&mut shadow_shader);
+                // SAFETY: binds render targets alive for the whole frame to the active shader
+                unsafe {
+                    raylib::ffi::SetShaderValueTexture(raw, shadow_locs[0], map_mask.texture);
+                    raylib::ffi::SetShaderValueTexture(raw, shadow_locs[1], blank.texture);
+                    raylib::ffi::SetShaderValueTexture(raw, shadow_locs[2], blank.texture);
+                }
+                b.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
+            }
+            let mut m = t.begin_mode2D(camera2d);
+            for p in &objects.upright {
+                draw_sprite(&mut m, part(p), p.screen, view);
+            }
+            let raw = *unit_shader.as_ref();
+            let mut s = m.begin_shader_mode(&mut unit_shader);
+            // SAFETY: as above
+            unsafe {
+                raylib::ffi::SetShaderValueTexture(raw, unit_depth_loc, depth.texture);
+                set_unit_uniforms(raw, unit_size_loc, unit_view_loc, (sw, sh), &cam);
+            }
+            for u in &units {
+                draw_sprite_tinted(&mut s, &vehicles[u.kind].tracks[u.frame], u.screen, view, tint(u));
+            }
+        }
+        // second pass: the units' shadows
+        {
+            let mut t = rl.begin_texture_mode(&thread, unit_mask);
+            t.clear_background(Color::BLANK);
+            let mut m = t.begin_mode2D(camera2d);
+            for u in &units {
+                draw_unit_shadow(&mut m, &vehicles[u.kind], u, view);
+            }
+        }
+        {
+            let mut t = rl.begin_texture_mode(&thread, scene);
+            let raw = *shadow_shader.as_ref();
+            let mut b = t.begin_shader_mode(&mut shadow_shader);
+            // SAFETY: as above
+            unsafe {
+                raylib::ffi::SetShaderValueTexture(raw, shadow_locs[0], unit_mask.texture);
+                raylib::ffi::SetShaderValueTexture(raw, shadow_locs[1], map_mask.texture);
+                raylib::ffi::SetShaderValueTexture(raw, shadow_locs[2], depth.texture);
+            }
+            b.draw_texture_rec(&*composed, source, Vector2::zero(), Color::WHITE);
+        }
+        // third pass: hull and turret
+        {
+            let mut t = rl.begin_texture_mode(&thread, scene);
+            let mut m = t.begin_mode2D(camera2d);
+            let raw = *unit_shader.as_ref();
+            let mut s = m.begin_shader_mode(&mut unit_shader);
+            // SAFETY: as above
+            unsafe {
+                raylib::ffi::SetShaderValueTexture(raw, unit_depth_loc, depth.texture);
+                set_unit_uniforms(raw, unit_size_loc, unit_view_loc, (sw, sh), &cam);
+            }
+            for u in &units {
+                draw_unit(&mut s, &vehicles[u.kind], u, view, tint(u));
             }
         }
 
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
-        {
-            let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
-            let raw = *shadow_shader.as_ref();
-            let mut b = d.begin_shader_mode(&mut shadow_shader);
-            // SAFETY: binds the mask texture, alive for the whole frame, to the active shader
-            unsafe { raylib::ffi::SetShaderValueTexture(raw, shadow_mask_loc, mask.texture) };
-            b.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
-        }
+        d.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
         {
             let mut m = d.begin_mode2D(camera2d);
-            // upright objects (layer 7) over everything, never darkened: every shadow sets only
-            // flag bit 0 and `cad800.dll` `0x10005e41` darkens on bit 1
-            for p in &objects.upright {
-                draw_sprite(&mut m, part(p), p.screen, view);
-            }
             for u in units.iter().filter(|u| selected.contains(&u.id)) {
                 m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
             }
