@@ -225,6 +225,10 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
+| `0x1004f060` | player slots (4 x 0xb5 bytes at `0x101ff408`: type 1 human / 3 from `0xa`, colour, side `+3`, start group `+4`) from `XCHNG\TOGAME\mplay_info` (12 x 0x28), then `mis_players` (u32, 3 x 0x161) |
+| `0x10071e40` | initial view: middle of the map; `0x10072000` moves it to an absolute point |
+| `0x100845f0`, `0x10084880` | start: zone `+0x38`/`+0x39` reset to 4/12 (`0x1004e64c`), zones handed out by `0x10086930` (random, spread by `0x10086890`), each active player's zone kept in `+0x230 + 4 * player` of the game object (vtable `0x100ac780`), view centred on the local player's zone (`[0x10387ca0]`) |
+| `menu_dll.dll` `0x10017930`, `0x10018840` | splits the map into the `XCHNG\TOGAME\*` files; writes `mplay_info` from the session player list (`0x100480ec`, 0x25 bytes: name, `+0x20` side, `+0x21` colour, `+0x22` start group) |
 | `0x1003fe70` | mission units: reads `XCHNG\TOGAME\mis_unitnames` (16-byte names) and `mis_mapunits`; per record `0x1003e370(name, player)` creates the unit (first free id from `player * 1024 + 1`, table `0x100b7504`, prepended to the unit list `[0x100c4508]`), then its vtable `+0x24c` applies the record (tank `0x10040190`: cell middle, then `0x10040030` builds the init block for `+0x19c`) and `+0x254` each 6-byte crew record |
 | `0x10040030` | init block from a map record: byte0, byte4, HP = max(1, health% * type `+0xb8` / 100), crew condition = min(0x8000, (crew% << 15) / 100), ammo = ammo% * type `+0xbc` / `+0xc0` / 100, x, y, heading |
 | `0x10033990` | base unit init: cell and offset from x, y, `+0x37` HP, `+0x39`/`+0x3b` ammo, `+0x3d` crew condition, `+0x3f` byte4, `+0x5a` byte0, 5 random bytes into `+0x46..` (draws the generator) |

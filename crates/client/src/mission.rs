@@ -9,6 +9,13 @@ use std::collections::{BTreeMap, HashMap};
 use openstrike_formats::map::Map;
 use openstrike_sim::{CREW_FULL, Unit, UnitId, World};
 
+/// The human player. **Assumption**, not read in the code: in single player the menu builds the
+/// players (`XCHNG\TOGAME\mplay_info`, written by `menu_dll.dll` `0x10018840`) from its session
+/// list, whose sides arrive through session messages (`0x1001cd1f`), so the value is only known at
+/// run time. Every map names its sides "Spieler", "Gegner", "Verbündeter" (player, enemy, ally),
+/// hence player 0. To check against the running game.
+pub const HUMAN_PLAYER: u8 = 0;
+
 /// The class OpenStrike simulates (tank unit vtable `0x100a83f0`).
 pub const TANK: &str = "tank";
 

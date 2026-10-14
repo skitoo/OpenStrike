@@ -69,6 +69,7 @@ pub struct UnitView {
     pub id: UnitId,
     /// Index into the vehicle types.
     pub kind: usize,
+    pub player: u8,
     pub screen: (i32, i32),
     pub frame: usize,
     pub turret_frame: usize,
@@ -111,6 +112,7 @@ pub fn units(world: &World, proj: &Projection) -> Vec<UnitView> {
             UnitView {
                 id: u.id,
                 kind: u.kind,
+                player: u.player,
                 screen: proj.to_screen(x.div_euclid(SUBPIXEL), y.div_euclid(SUBPIXEL)),
                 frame: frame_for(u.facing),
                 turret_frame: frame_for(u.turret),

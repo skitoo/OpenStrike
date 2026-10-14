@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
 use openstrike_sim::grid::CELL_PX;
-use openstrike_sim::{Command, Grid, Rules, SUBPIXEL, TICKS_PER_SECOND, UnitId, step};
+use openstrike_sim::{Command, Grid, Rules, TICKS_PER_SECOND, UnitId, step};
 use raylib::prelude::*;
 
 use openstrike::assets;
@@ -261,10 +261,9 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("openstrike: units of classes not simulated yet, left out: {:?}", start.skipped);
     }
     let mut world = start.world;
-    // until the map's start view is read: the first unit of player 0, else the middle of the map
-    let first = world.units.iter().rev().find(|u| u.player == 0).map(|u| u.position());
-    let (mx, my) = first.map_or(((proj.width * 16) as i32, (proj.height * 16) as i32), |p| (p.0 / SUBPIXEL, p.1 / SUBPIXEL));
-    let (lx, ly) = opts.look_at.unwrap_or((mx, my));
+    // the game first centres the view on the middle of the map (Game_Dll.dll 0x10071e40); moving
+    // it to the reinforcement zone given to the local player (0x100845f0) is not done yet
+    let (lx, ly) = opts.look_at.unwrap_or(((proj.width * 16) as i32, (proj.height * 16) as i32));
     let (tx, ty) = proj.to_screen(lx, ly);
     let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
     let mut selected: Vec<UnitId> = Vec::new();
@@ -300,7 +299,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             && let Some(start) = press.take()
         {
             let add = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
-            selected = selection::select(&selected, &units, start, mouse_world, add);
+            let own: Vec<UnitView> = units.iter().filter(|u| u.player == mission::HUMAN_PLAYER).cloned().collect();
+            selected = selection::select(&selected, &own, start, mouse_world, add);
         }
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() {
             let (x, y) = proj.to_map(mouse_world.0, mouse_world.1);

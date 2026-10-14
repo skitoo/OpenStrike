@@ -164,6 +164,15 @@ The class of each type comes from `desc_common/units/UNITS` (`class name` lines:
 which the type factory (around `Game_Dll.dll` `0x1004b54e`) uses to build the type object. OpenStrike creates the
 `tank` class units (3466 on the 164 maps) and leaves the other classes out until they are written.
 
+**Players and the start view.** The players are not in the map: `menu_dll.dll` writes `XCHNG\TOGAME\mplay_info`
+(`0x10018840`: 12 entries of 0x28 bytes, name, id, side `+0x24` = index into the map's sides, start group
+`+0x25`, colour `+0x26`) from its session list, whose sides arrive through session messages (`0x1001cd1f`), single
+player included; `Game_Dll.dll` `0x1004f060` reads it into 4 player slots (`0x101ff408`, 0xb5 bytes). The view starts
+in the middle of the map (`0x10071e40`); then every zone is made free (`+0x38` = 4, `+0x39` = 12, `0x1004e64c`),
+`0x10086930` hands the zones with a value out to the players at random, spreading them, and the view moves to
+the one of the local player (`0x100845f0`, `0x10084880`); 26 of the 164 single-player maps have none. OpenStrike
+starts in the middle of the map and assumes the human is player 0 (see `crates/client/src/mission.rs`).
+
 ```
 "SSSM", u32 version (0x10f), 16-byte GUID
 u32 x5 (2, 12, 2, 4, 0 in the samples: meaning unknown), u32 width, u32 height   (cells, 128 or 256)
@@ -184,9 +193,15 @@ units (0x4152f0; XCHNG\TOGAME\mis_mapunits, read by Game_Dll.dll 0x1003fe70):
     names), u8 crew count, i16 x, i16 y (map pixels; a vehicle goes to its cell's (15, 15), 0x10040190),
     u8 heading (& 31, hull and turret, 0x1002ce06), u8 player (id from player * 1024 + 1, 0x1003e370)
   editors only write units at least 4 cells from the edge
-then (not parsed yet): 3-4 player/side records of 0x161 bytes (0x415b10);
-0x4e-byte records + a byte grid (0x4155d0); compressed blobs (`VOVA_Comp`, 0x4156b0);
-a byte grid (0x415740); two size-prefixed blocks (0x415a70, 0x415cb0); 2x i16 pairs (0x415d50)
+sides (0x415b10; XCHNG\TOGAME\mis_players): u32 n, n x (0x25 + 0xb0 + 0x8c) bytes, starting with the
+  side's name ("Spieler", "Gegner", "Verbündeter" in every single-player map: player, enemy, ally)
+u32 n, n x 0x4e-byte records, then a byte per cell (0x4155d0)
+u32 n, n compressed blobs (`VOVA_Comp`, 0x4156b0), each u32 size + data
+a byte per cell (0x415740)
+u32 size, support block (0x415a70; XCHNG\TOGAME\mis_support): starts with 16 reinforcement zones of 5 i32
+  (x1, y1, x2, y2 in cells, -1 = none, then a value; read by Game_Dll.dll 0x1004e340 into 0x101fe720,
+  records of 0x3a bytes: x1 +0, y1 +4, value +8, x2 +0xc, y2 +0x10), then the support units
+u32 size, block (0x415cb0); 100 x (u16, u16) cell points (0x415d50)
 ```
 
 ### Ground
