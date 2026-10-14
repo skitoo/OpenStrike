@@ -188,6 +188,10 @@ Loader: `Game_Dll.dll` `0x1004fac0` (loads `rhomb.pl` and `mappic.rs2`, keeps th
   the sample map, 31 on a few cells) is the level at the rhomb's top vertex: the game interpolates the level of
   each pixel between the cell, the cells at x + 1 (right vertex), y + 1 (left vertex) and (x + 1, y + 1) (bottom
   vertex), and alternates palettes `level` and `level + 32` in a checkerboard.
+  The checkerboard's phase is a global flag (`cad800.dll` `0x10010049`, 0 at start) flipped by every rhomb row
+  drawn (33 times per whole rhomb, also by `0x10003aa5`, `0x10003e93`, `0x10004249`); since the game keeps the
+  screen in a ring buffer and only draws the strips scrolling into view, the phase depends on the whole drawing
+  history. **Accepted difference**: OpenStrike alternates it from cell to cell along x, as in one full redraw.
 - Cells within 4 cells of the map edge are drawn black (`Game_Dll.dll` `0x100701a0`).
 - **Isometric projection** (inferred, see below): map pixel (x, y) is drawn at screen (x - y, (x + y) / 2), so a
   32x32 cell becomes a 64x32 rhomb, and cell (cx, cy) is centred at ((cx - cy) * 32, (cx + cy) * 16 + 16).

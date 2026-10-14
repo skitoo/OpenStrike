@@ -13,8 +13,10 @@
 //!   at (x + 1, y + 1) (bottom vertex), over the two triangles above and below the horizontal
 //!   diagonal;
 //! - each pixel uses palette `level` or `level + 32` in a checkerboard. The checkerboard's phase is a
-//!   global flag that flips with every row the game draws, so it depends on the viewport and on what
-//!   was drawn before; here it alternates from cell to cell along x, as in a full screen row.
+//!   global flag (`cad800.dll` `0x10010049`, 0 at start) that flips with every row any rhomb
+//!   routine draws, and the game only redraws the strips that scroll into view, so it depends on
+//!   everything drawn since start-up. It cannot be reproduced with a free camera; here it alternates
+//!   from cell to cell along x, as in a full screen row (a deliberate, accepted difference).
 //!
 //! Cells in the 4-cell border are drawn with an empty rhomb at level 0 (`0x100701a0`), i.e. black.
 
