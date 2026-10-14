@@ -182,6 +182,7 @@ none/track/whell), `movespeed` (`+0xb33`, `+0xb37`), `expa_crush` (`+0xb3b`, `+0
 | `0x1003e870` | read | may a group order send this unit to this cell |
 | `0x10032060` | read | append an order record |
 | `0x10068900` | read | list the units of an AI team (byte 0 of the map record, `+0x5a`; teams of 0xb4 bytes from `0x1034d718`) |
+| `0x1007ec30`, `0x1007ee30` | read | "zipline" row at the top of the screen: one window per entry of `[0x103880e0]` (20-byte entries at `0x103880e4`), `icon.rs2` frame 0's size apart, wrapping at the screen width. The list comes from the single selected own unit's vtable `+0xb4` (`0x10083820`): for a tank (`0x100144f8`) its passengers (`+0xdd` records of 0x13 bytes at `+0xec`), so it stays empty without passengers |
 | `0x10077af0`, `0x10077c30`, `0x10077d90` | read | information bar: placement, text from the window under the mouse, `~key_xx~` names |
 | `0x10080fa0`, `0x10083820` | read | orders grid from the selection's capabilities (see `docs/formats.md`, "Orders grid") |
 | `0x10080150`, `0x10080a0a` | read | panel button pressed (switch on id - 0xb); target click for the armed order |
