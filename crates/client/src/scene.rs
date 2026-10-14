@@ -96,15 +96,10 @@ pub fn see_through(selected: bool, unit: (i32, i32), mouse: (i32, i32)) -> bool 
     selected || cursor_distance(unit, mouse) < 256
 }
 
-/// Sprite frame for a map heading (0-31, clockwise from east): the heading is projected, then
-/// matched to the 32 screen headings of the sprite strip (frame k faces (k + 4) * 11.25 degrees
-/// clockwise from east). How the game picks the frame is not read in its code yet.
+/// Sprite frame for a map heading (0-31, clockwise from the map's east): the heading itself, for
+/// the hull (`Game_Dll.dll` `0x1000eb7b`, from `+0x63`) and the turret (`0x1000eb99`, from `+0xce`).
 pub fn frame_for(heading: u8) -> usize {
-    let angle = (heading as f32) * std::f32::consts::TAU / 32.0;
-    let (dx, dy) = (angle.cos(), angle.sin());
-    let (sx, sy) = (dx - dy, (dx + dy) / 2.0);
-    let screen_heading = (sy.atan2(sx) / std::f32::consts::TAU * 32.0).round().rem_euclid(32.0) as u8;
-    openstrike_formats::hot::frame_for_heading(screen_heading)
+    (heading & 31) as usize
 }
 
 pub fn units(world: &World, proj: &Projection) -> Vec<UnitView> {

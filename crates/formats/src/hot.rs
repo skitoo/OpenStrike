@@ -2,8 +2,9 @@
 //!
 //! For a turreted vehicle with 32 headings (`t-26.hot`, 64 points), inferred from the data:
 //! - points 0..32: turret mount on the hull, per hull frame (about 13 px above the hull anchor);
-//! - points 32..64: gun muzzle relative to the turret, per turret frame. They trace an ellipse
-//!   that fixes the frame orientation: frame k faces (k + 4) * 11.25 degrees clockwise from east.
+//! - points 32..64: gun muzzle relative to the turret, per turret frame (they trace an ellipse).
+//!
+//! Frame k of a strip faces map heading k (`Game_Dll.dll` `0x1000eb7b`).
 //!
 //! Other vehicles have more points (`bron.hot`, 128): their meaning is still unknown.
 
@@ -22,9 +23,4 @@ pub fn parse(data: &[u8]) -> Result<Vec<(i32, i32)>> {
             (i32::from_le_bytes(x.try_into().unwrap()), i32::from_le_bytes(y.try_into().unwrap()))
         })
         .collect())
-}
-
-/// Frame of a 32-frame sprite strip that faces heading `heading` (clockwise from east, 11.25 degree steps).
-pub const fn frame_for_heading(heading: u8) -> usize {
-    (heading as usize + 28) % 32
 }

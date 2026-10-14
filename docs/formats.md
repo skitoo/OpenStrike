@@ -131,8 +131,9 @@ Observed on `t-26.pck` (288 frames) with `t-26.hot` (64 points):
 | 256-287 | turret shadows (second `0xa3` run) |
 
 `.hot` = i32 (x, y) pairs. For the T-26: points 0-31 are the turret mount per hull frame (about (0, -13)),
-points 32-63 the gun muzzle per turret frame. The muzzle points trace an ellipse that fixes the orientation:
-**frame k faces (k + 4) x 11.25 degrees clockwise from east** (frame 28 east, 4 south, 12 west, 20 north).
+points 32-63 the gun muzzle per turret frame (they trace an ellipse). **Frame k faces map heading k** (0 the map's
+east, clockwise in 11.25 degree steps): the game draws the hull frame `heading & 31` and the turret frame
+`turret heading & 31` (`Game_Dll.dll` `0x1000eb7b`, `0x1000eb99`), with no projection.
 Decoder: `crates/formats/src/hot.rs`. Other vehicles have more points (`bron.hot`: 128), meaning unknown.
 
 ## Maps

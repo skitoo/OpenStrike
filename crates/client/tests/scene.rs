@@ -17,3 +17,10 @@ fn units_show_through_when_selected_or_near_the_cursor() {
     assert!(!see_through(false, (0, 0), (256, 0)));
     assert!(!see_through(false, (0, 0), (0, 128)));
 }
+
+#[test]
+fn the_sprite_frame_is_the_map_heading() {
+    assert_eq!(openstrike::scene::frame_for(0), 0);
+    assert_eq!(openstrike::scene::frame_for(17), 17);
+    assert_eq!(openstrike::scene::frame_for(31), 31);
+}

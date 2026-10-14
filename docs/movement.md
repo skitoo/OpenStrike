@@ -130,7 +130,6 @@ A move order, even for one unit, goes through the formation helper (state at `0x
 
 ## Not reproduced yet
 
-- Which sprite frame the game draws for a heading (OpenStrike projects the map heading).
 - Crushing objects and mines while driving (`0x1004c710`), engine smoke and sounds, damaged crews,
   immobilised vehicles (layer 1), towing, infantry and other path finder variants (`0x100639d0`,
   `0x100656c0`), orders other than move.
