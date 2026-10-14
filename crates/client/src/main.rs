@@ -14,7 +14,7 @@ use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
-use openstrike::mission;
+use openstrike::{minimap, mission};
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, terrain};
 
@@ -254,6 +254,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         });
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
+    let panel = upload_sprite(&mut rl, &thread, &assets.panel);
+    let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
 
     let kinds = assets.vehicles.iter().enumerate().map(|(i, v)| (v.name.to_ascii_lowercase(), i)).collect();
     let start = mission::start(&assets.map, &assets.unit_classes, &kinds);
@@ -290,9 +292,25 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         cam = camera::update(cam, &read_input(&rl), dt, (screen_w as f32, screen_h as f32), screen);
         let mouse = rl.get_mouse_position();
         let mouse_world = cam.screen_to_map(mouse.x, mouse.y);
+        // the interface panel, bottom left, scaled by a whole factor (the original screen is 800 x 600)
+        let ui_scale = ((screen.0 / 800.0).min(screen.1 / 600.0).floor() as i32).max(1);
+        let panel_origin = (0, screen.1 as i32 - minimap::PANEL_SIZE.1 * ui_scale);
+        let on_panel = |x: f32, y: f32| {
+            let (px, py) = ((x as i32 - panel_origin.0) / ui_scale, (y as i32 - panel_origin.1) / ui_scale);
+            (px >= 0 && py >= 0 && px < minimap::PANEL_SIZE.0 && py < minimap::PANEL_SIZE.1).then_some((px, py))
+        };
+        let mouse_on_panel = on_panel(mouse.x, mouse.y);
+        if let Some((px, py)) = mouse_on_panel
+            && rl.is_mouse_button_down(MouseButton::MOUSE_BUTTON_LEFT)
+            && let Some((tx, ty)) = minimap::target(&assets.map, px, py)
+        {
+            let (sx, sy) = proj.to_screen(tx, ty);
+            cam.x = sx as f32 - screen.0 / 2.0 / cam.zoom;
+            cam.y = sy as f32 - screen.1 / 2.0 / cam.zoom;
+        }
         let mut units: Vec<UnitView> = scene::units(&world, &proj);
 
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_none() {
             press = Some(mouse_world);
         }
         if rl.is_mouse_button_released(MouseButton::MOUSE_BUTTON_LEFT)
@@ -302,7 +320,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             let own: Vec<UnitView> = units.iter().filter(|u| u.player == mission::HUMAN_PLAYER).cloned().collect();
             selected = selection::select(&selected, &own, start, mouse_world, add);
         }
-        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() {
+        if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_RIGHT) && !selected.is_empty() && mouse_on_panel.is_none() {
             let (x, y) = proj.to_map(mouse_world.0, mouse_world.1);
             pending.push(Command::Move { units: selected.clone(), to: cell_at(x as i32, y as i32) });
         }
@@ -462,6 +480,12 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     m.draw_rectangle_lines(x0 as i32, y0 as i32, w as i32, h as i32, Color::LIME);
                 }
             }
+        }
+        {
+            let at = |x: i32, y: i32| Vector2::new((panel_origin.0 + x * ui_scale) as f32, (panel_origin.1 + y * ui_scale) as f32);
+            let s = ui_scale as f32;
+            d.draw_texture_ex(&panel.texture, at(panel.anchor.0, panel.anchor.1), 0.0, s, Color::WHITE);
+            d.draw_texture_ex(&minimap_texture, at(0, 0), 0.0, s, Color::WHITE);
         }
         d.draw_text(
             "Left click / drag: select (Shift adds)   Right click: move   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",

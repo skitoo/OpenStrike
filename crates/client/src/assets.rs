@@ -50,6 +50,9 @@ pub struct Assets {
     pub vehicles: Vec<Vehicle>,
     /// Class of each unit type (lowercase names, `desc_common/units/UNITS`).
     pub unit_classes: HashMap<String, String>,
+    /// The interface panel picture (`intrpic.dat` frame 1, palette `intr.pl`; loaded by
+    /// `Game_Dll.dll` `0x10072fc3`).
+    pub panel: Image,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -104,6 +107,15 @@ pub fn mount(data_dir: &Path, climate: &str) -> Result<Vfs, Error> {
         vfs.mount(Archive::parse(std::fs::read(find_file(data_dir, name)?)?)?);
     }
     Ok(vfs)
+}
+
+/// A frame of the interface pictures (`intrpic.dat`, palette `intr.pl`).
+fn interface_frame(vfs: &Vfs, index: usize) -> Result<Image, Error> {
+    let data = vfs.require("intrpic.dat")?;
+    let palette = Palette::parse(&vfs.require("intr.pl")?)?;
+    let frames = sprite::pck_frames(&data)?;
+    let frame = frames.get(index).ok_or("intrpic.dat: frame out of range")?;
+    Ok(sprite::decode(frame, &palette)?)
 }
 
 /// Movement parameters and sprite file of a unit from its description.
@@ -200,6 +212,7 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         object_sets,
         vehicles,
         unit_classes,
+        panel: interface_frame(&vfs, 1)?,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })

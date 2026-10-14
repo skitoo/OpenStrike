@@ -226,6 +226,9 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
 | `0x1004f060` | player slots (4 x 0xb5 bytes at `0x101ff408`: type 1 human / 3 from `0xa`, colour, side `+3`, start group `+4`) from `XCHNG\TOGAME\mplay_info` (12 x 0x28), then `mis_players` (u32, 3 x 0x161) |
+| `0x10072fc3` | interface: `intrpic.dat` (`[0x10382fc0]`), `icon.rs2` (`[0x10382b88]`), `intr.pl` |
+| `0x1006f540` | the `PANL` window: rect from `intrpic.dat` frame 1 at the bottom left (`[0x10353ee4]` = screen height), minimap widget `0x10357008` |
+| `0x1006e5c0`, `0x1006eef0`, `0x1006f3f2` | minimap: origin and scale (`+0x11`, `+0x15`, `+0x25`), drawing from `0x101f64e6` (preview, read by `0x1004c8b0` from `map_mini`), click to move the view |
 | `0x10071e40` | initial view: middle of the map; `0x10072000` moves it to an absolute point |
 | `0x100845f0`, `0x10084880` | start: zone `+0x38`/`+0x39` reset to 4/12 (`0x1004e64c`), zones handed out by `0x10086930` (random, spread by `0x10086890`), each active player's zone kept in `+0x230 + 4 * player` of the game object (vtable `0x100ac780`), view centred on the local player's zone (`[0x10387ca0]`) |
 | `menu_dll.dll` `0x10017930`, `0x10018840` | splits the map into the `XCHNG\TOGAME\*` files; writes `mplay_info` from the session player list (`0x100480ec`, 0x25 bytes: name, `+0x20` side, `+0x21` colour, `+0x22` start group) |

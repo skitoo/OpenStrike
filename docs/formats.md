@@ -150,6 +150,21 @@ east, clockwise in 11.25 degree steps): the game draws the hull frame `heading &
 `turret heading & 31` (`Game_Dll.dll` `0x1000eb7b`, `0x1000eb99`), with no projection.
 Decoder: `crates/formats/src/hot.rs`. Other vehicles have more points (`bron.hot`: 128), meaning unknown.
 
+## Interface pictures `common/intrpic.dat`
+
+`.pck` layout with a frame count (87 frames), palette `common/intr.pl`; loaded by `Game_Dll.dll` `0x10072fc3`.
+Frame 1 is the panel (352 x 136: minimap rhomb, 3 x 3 command grid, menu button), which the game opens as the
+`PANL` window in the bottom left corner of the screen (`0x1006f540`); frame 2 a 352 x 15 strip, frame 5 the
+368 x 32 message bar (filter buttons L, EX, A, A), frames 15 and up buttons and command icons (two or three
+states each), frames 11-13 nested collections (fonts and markers drawn over units, used as `+0x30`, `+0x34`).
+
+The minimap (`0x1006eef0`) fills the panel's rhomb: widget pixel `(px, py)` shows preview cell
+`(py + px / 2, py - px / 2)` (arithmetic shifts) when the cell is at least 4 cells from the edge (else the panel
+shows through), darkened to `(c >> 1) & mask` when the player does not see it. The widget's vertical origin is
+`(bottom - (w + h) / 2 - top + 1) >> 1` in the panel (`/ 4` for maps over 128 cells, which use the halved preview
+and minimap scale, `0x1006e5c0`); its horizontal origin comes from a panel value not traced yet, 132 by the
+panel picture. A click moves the view to the cell (`0x1006f3f2`).
+
 ## Maps
 
 Three gzip-compressed formats: `SSSM` single-player maps (`.ssm`, version `0x10f`, handled),
