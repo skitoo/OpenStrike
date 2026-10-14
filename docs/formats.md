@@ -157,7 +157,11 @@ Frame 0 is not a picture but the panel's layout, 16-byte records of four i32 (th
 look like button rectangles (x0, y0, x1, y1), record 10 is the minimap origin (132, 6). Frame 1 is the panel (352 x 136: minimap rhomb, 3 x 3 command grid, menu button), which the game opens as the
 `PANL` window in the bottom left corner of the screen (`0x1006f540`); frame 2 a 352 x 15 strip, frame 5 the
 368 x 32 message bar (filter buttons L, EX, A, A), frames 15 and up buttons and command icons (two or three
-states each), frames 11-13 nested collections (fonts and markers drawn over units, used as `+0x30`, `+0x34`).
+states each), frames 11-13 collections (fonts and markers drawn over units, used as `+0x30`, `+0x34`): 256 u32
+offsets from the collection's start, one sprite per index (`Game_Dll.dll` `0x100921c0`; indices of 0x100 and up
+go through wider tables at `+0x3fc`, `+0x7fc`). Frame 13 is a small font indexed by character code: the group
+number of a selected unit is glyph `group + 0x2f` (4 x 5 `0xa1` sprites anchored 5 pixels up), drawn in the
+palette of `user.pl` from entry 62.
 
 The minimap (`0x1006eef0`) fills the panel's rhomb: widget pixel `(px, py)` shows preview cell
 `(py + px / 2, py - px / 2)` (arithmetic shifts) when the cell is at least 4 cells from the edge (else the panel
@@ -179,6 +183,21 @@ map pixel shifted right by 5 (6), `(x - y, (x + y) >> 1)` from the widget's orig
 that one pixel, on the widget's pixels only (`0x1006e470`), in `user.pl` colour `64 + player`, unless it is dead
 (bit 0 of `+0x1a`) or not seen by the local player (`0x100333d0`). **Accepted difference**: OpenStrike draws a 2 x 2 square
 from that pixel (still on the widget's pixels only), one pixel being too small to see on today's screens.
+
+## Keys `key.map`
+
+Text file at the root of the install (also in `common.sue`): pairs of lines, a name (`key_g0`) then a virtual key
+code in hex and its name (`30 0`). The defaults: `key_g0`-`key_g9` the groups (keys 0-9), `key_00`-`key_22` the
+3 x 3 command grid (A Z E / Q S D / W X C, an AZERTY layout), `key_l0`-`key_l7` F1-F8, `key_MENU` Escape,
+`key_BRIEF` F9, `key_QUIT` F10, and more. `Game_Dll.dll` keeps them in a table of 0x14-byte entries (the groups
+from `0x102992bc`) and compares them with each key event (`0x10081cc0`). The modifiers, `[0x10387ca4]`, come
+from the DirectInput keyboard state (`0x100820a0`): bit 0 Shift, 1 Alt, 2 Ctrl.
+
+Group keys: with Ctrl (`0x100837b0`), the selected units get the group (`+0x40` = key + 1) and, unless Shift is
+held too, the group's other units leave it. Without (`0x10083400`), the group's units that may be selected
+(`+0x74`) are selected (with Alt, also those carrying a passenger of the group), the selected units outside it
+dropped unless Shift is held, then the others' units dropped if the local player's are among them; the same key
+again within the system's double-click time centres the view on the mean of the selected units' cells (times 32).
 
 ## Interface colours `user.pl`
 

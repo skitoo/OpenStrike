@@ -18,6 +18,19 @@ use openstrike::{minimap, mission};
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, status, terrain};
 
+/// The group keys, `key_g0`-`key_g9` of `key.map`: groups 1-10.
+const DIGIT_KEYS: [KeyboardKey; 10] = [
+    KeyboardKey::KEY_ZERO,
+    KeyboardKey::KEY_ONE,
+    KeyboardKey::KEY_TWO,
+    KeyboardKey::KEY_THREE,
+    KeyboardKey::KEY_FOUR,
+    KeyboardKey::KEY_FIVE,
+    KeyboardKey::KEY_SIX,
+    KeyboardKey::KEY_SEVEN,
+    KeyboardKey::KEY_EIGHT,
+    KeyboardKey::KEY_NINE,
+];
 /// Quarter of a cell, for the blocked overlay.
 const QUARTER: i32 = CELL_PX / 2;
 const SCREENSHOT_FRAMES: u32 = 200;
@@ -255,6 +268,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
     let panel = upload_sprite(&mut rl, &thread, &assets.panel);
+    let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
     let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
 
     let kinds = assets.vehicles.iter().enumerate().map(|(i, v)| (v.name.to_ascii_lowercase(), i)).collect();
@@ -269,6 +283,9 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let (tx, ty) = proj.to_screen(lx, ly);
     let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
     let mut selected: Vec<UnitId> = Vec::new();
+    let mut groups = selection::Groups::new();
+    // the last group key pressed and when, for the second press that centres the view
+    let mut last_recall: Option<(u8, f64)> = None;
     let mut press: Option<(f32, f32)> = None;
     let mut pending: Vec<Command> = Vec::new();
     // Each frame, as the game composes the screen (`Game_Dll.dll` `0x100706d0`-`0x100707f9`): the
@@ -326,6 +343,30 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         if rl.is_key_pressed(KeyboardKey::KEY_B) {
             show_blocked = !show_blocked;
+        }
+        let ctrl = rl.is_key_down(KeyboardKey::KEY_LEFT_CONTROL) || rl.is_key_down(KeyboardKey::KEY_RIGHT_CONTROL);
+        let shift = rl.is_key_down(KeyboardKey::KEY_LEFT_SHIFT) || rl.is_key_down(KeyboardKey::KEY_RIGHT_SHIFT);
+        for (n, key) in DIGIT_KEYS.into_iter().enumerate() {
+            if !rl.is_key_pressed(key) {
+                continue;
+            }
+            let g = n as u8 + 1;
+            if ctrl {
+                let ids: Vec<UnitId> = world.units.iter().map(|u| u.id).collect();
+                selection::assign(&mut groups, &ids, &selected, g, shift);
+                continue;
+            }
+            selected = selection::recall(&scene::units(&world, &proj), &selected, &groups, g, shift, mission::HUMAN_PLAYER);
+            let now = rl.get_time();
+            if last_recall.is_some_and(|(last, at)| last == g && now - at < selection::RECALL_TWICE as f64) {
+                let cells: Vec<(i16, i16)> = world.units.iter().filter(|u| selected.contains(&u.id)).map(|u| u.cell).collect();
+                if let Some((x, y)) = selection::centre(&cells) {
+                    let (sx, sy) = proj.to_screen(x, y);
+                    cam.x = sx as f32 - screen.0 / 2.0 / cam.zoom;
+                    cam.y = sy as f32 - screen.1 / 2.0 / cam.zoom;
+                }
+            }
+            last_recall = Some((g, now));
         }
         accumulator += if opts.screenshot.is_some() { tick } else { dt };
         while accumulator >= tick {
@@ -491,6 +532,11 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     let [r, g, b] = assets.user_colours.colours[l.colour];
                     m.draw_rectangle(l.x, l.y, l.len, 1, Color::new(r, g, b, 255));
                 }
+                if let Some(&g) = groups.get(&u.id) {
+                    let digit = &group_digits[g as usize - 1];
+                    let (x, y) = status::group_at(u.screen, assets.vehicles[u.kind].selector);
+                    m.draw_texture(&digit.texture, x + digit.anchor.0, y + digit.anchor.1, Color::WHITE);
+                }
             }
             if show_blocked {
                 draw_blocked(&mut m, &rules.grid, &proj, view);
@@ -526,7 +572,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         d.draw_text(
-            "Left click / drag: select (Shift adds)   Right click: move   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",
+            "Left click / drag: select (Shift adds)   Right click: move   Ctrl+0-9: group, 0-9: recall   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",
             10,
             10,
             20,

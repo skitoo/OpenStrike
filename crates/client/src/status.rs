@@ -4,8 +4,8 @@
 //! horizontal line (driver `+0xaa28`, `cad800.dll` `0x10001420`). Colours are `user.pl` entries
 //! (`0x10387cb0` + 2 * entry).
 //!
-//! Not drawn yet: the group number over the bars (`+0xda`, a glyph of `intrpic.dat` frame 13) and,
-//! for the local player's units, the weapon boxes (`0x1000a2b0`): there are no groups or weapons yet.
+//! Not drawn yet: the weapon boxes of the local player's units (`0x1000a2b0`), there are no
+//! weapons yet.
 
 /// Background of every bar.
 pub const BACKGROUND: usize = 1;
@@ -121,4 +121,11 @@ pub fn bars(at: (i32, i32), half: i32, s: &Status) -> Vec<Line> {
         bar(&mut out, row, hp, hp_colour);
     }
     out
+}
+
+/// Where the group number of a unit with bars is drawn (`0x10009ff0`, when the unit's group,
+/// copied to `+0xda`, is not 0): the glyph's origin, its anchor still to add, at the bars' right
+/// end, 5 pixels above their top.
+pub fn group_at(at: (i32, i32), half: i32) -> (i32, i32) {
+    (at.0 - 4 + half, at.1 + ((half * 3) >> 2) - 5)
 }

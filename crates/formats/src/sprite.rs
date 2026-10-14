@@ -85,6 +85,14 @@ pub fn pck_frames(data: &[u8]) -> Result<Vec<&[u8]>> {
     Ok(slices(data, &offsets))
 }
 
+/// Frame `index` of a collection, as `intrpic.dat` frames 11-13 hold them (the game's
+/// `Game_Dll.dll` `0x100921c0`): 256 u32 offsets from the collection's start, one per index (wider
+/// tables for indices of 0x100 and up are not read). The slice runs to the end of the collection.
+pub fn collection_frame(data: &[u8], index: u8) -> Result<&[u8]> {
+    let at = u32_at(data, 4 * index as usize)? as usize;
+    data.get(at..).filter(|f| !f.is_empty()).ok_or_else(|| Error::Invalid(format!("collection frame {index} at {at}")))
+}
+
 /// Split a `.rs2` into frames: u32 count, then `offsets[count + 1]`. Empty frames are kept.
 pub fn rs2_frames(data: &[u8]) -> Result<Vec<&[u8]>> {
     let mut r = Reader::new(data);

@@ -1,5 +1,7 @@
 //! Unit picking on screen, as pure functions over the drawn units.
 
+use std::collections::HashMap;
+
 use openstrike_sim::UnitId;
 
 use crate::scene::UnitView;
@@ -59,4 +61,48 @@ pub fn select(current: &[UnitId], units: &[UnitView], press: (f32, f32), release
         }
     }
     out
+}
+
+/// The group of each unit that has one, 1-10 (the unit's `+0x40`). The digit keys (`key.map`
+/// `key_g0`-`key_g9`: 0-9) stand for groups 1-10.
+pub type Groups = HashMap<UnitId, u8>;
+
+/// Seconds within which pressing the same group key again centres the view on it: the system's
+/// double-click time (`GetDoubleClickTime`, 500 ms by default).
+pub const RECALL_TWICE: f32 = 0.5;
+
+/// Ctrl + group key (`Game_Dll.dll` `0x100837b0`): the selected units join group `g`; with `keep`
+/// (Shift held too) the group's other units stay in it, otherwise they leave it. `units` are all
+/// the units, in the game's list order.
+pub fn assign(groups: &mut Groups, units: &[UnitId], selected: &[UnitId], g: u8, keep: bool) {
+    for id in units {
+        if selected.contains(id) {
+            groups.insert(*id, g);
+        } else if !keep && groups.get(id) == Some(&g) {
+            groups.remove(id);
+        }
+    }
+}
+
+/// Group key (`0x10083400`): the units of group `g` are selected; without `add` (Shift) the
+/// selected units outside the group are dropped. Then, if any selected unit is `local`'s, the
+/// others' are dropped. `units` are the units that may be selected (alive and seen, `+0x74`), in
+/// list order, which is the order of the result.
+pub fn recall(units: &[UnitView], selected: &[UnitId], groups: &Groups, g: u8, add: bool, local: u8) -> Vec<UnitId> {
+    let in_group = |id: &UnitId| groups.get(id) == Some(&g);
+    let picked: Vec<&UnitView> =
+        units.iter().filter(|u| in_group(&u.id) || (add && selected.contains(&u.id))).collect();
+    let own = picked.iter().any(|u| u.player == local);
+    picked.into_iter().filter(|u| !own || u.player == local).map(|u| u.id).collect()
+}
+
+/// Map pixel the view centres on when a group key is pressed twice: the mean of the selected
+/// units' cells, times 32 (`0x10083400`, integer division of the sums).
+pub fn centre(cells: &[(i16, i16)]) -> Option<(i32, i32)> {
+    let n = cells.len() as i32;
+    if n == 0 {
+        return None;
+    }
+    let sum = cells.iter().fold((0, 0), |s, c| (s.0 + c.0 as i32, s.1 + c.1 as i32));
+    Some(((sum.0 << 5) / n, (sum.1 << 5) / n))
 }

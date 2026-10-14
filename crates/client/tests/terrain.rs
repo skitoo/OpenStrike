@@ -133,3 +133,14 @@ fn the_first_archive_listed_in_sudtest_ini_wins() {
     // units.sue comes before animats.sue
     assert_eq!(beach.require("str.col").unwrap(), archive("units.sue").read("str.col").unwrap().unwrap());
 }
+
+#[test]
+fn the_group_digits_are_the_interface_font() {
+    let Some(dir) = data_dir() else { return };
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
+    assert_eq!(a.group_digits.len(), 10);
+    // 4 x 5 pixels hanging 5 above their origin, "1" narrower
+    assert_eq!((a.group_digits[0].width, a.group_digits[0].height, a.group_digits[0].anchor), (4, 5, (0, -5)));
+    assert_eq!(a.group_digits[1].width, 3);
+    assert!(a.group_digits.iter().all(|d| d.rgba.chunks(4).any(|p| p[3] == 255)));
+}

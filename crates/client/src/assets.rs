@@ -59,6 +59,10 @@ pub struct Assets {
     /// The interface colours (`user.pl`, 256 RGB565 values; loaded by `Game_Dll.dll`
     /// `0x10082240` into `0x10387cb0`).
     pub user_colours: Palette,
+    /// The group numbers over the status bars: glyphs `0x30`-`0x39` of `intrpic.dat` frame 13, the
+    /// one for group value `v` (1-10, key `v - 1`) at `v - 1` (`Game_Dll.dll` `0x10009ff0` draws glyph
+    /// `v + 0x2f`), in the palette of `user.pl` from entry 62 (`0x10387d2c`).
+    pub group_digits: Vec<Image>,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -122,6 +126,18 @@ fn interface_frame(vfs: &Vfs, index: usize) -> Result<Image, Error> {
     let frames = sprite::pck_frames(&data)?;
     let frame = frames.get(index).ok_or("intrpic.dat: frame out of range")?;
     Ok(sprite::decode(frame, &palette)?)
+}
+
+/// See [`Assets::group_digits`].
+fn group_digits(vfs: &Vfs) -> Result<Vec<Image>, Error> {
+    let user = vfs.require("user.pl")?;
+    let mut shifted = user.get(62 * 2..).ok_or("user.pl: too short")?.to_vec();
+    shifted.resize(512, 0);
+    let palette = Palette::parse(&shifted)?;
+    let data = vfs.require("intrpic.dat")?;
+    let fonts = sprite::pck_frames(&data)?;
+    let font = fonts.get(13).ok_or("intrpic.dat: no frame 13")?;
+    (0x30..=0x39).map(|c| Ok(sprite::decode(sprite::collection_frame(font, c)?, &palette)?)).collect()
 }
 
 /// Simulation parameters, sprite file and `Selector` of a unit from its description.
@@ -223,6 +239,7 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         unit_classes,
         panel: interface_frame(&vfs, 1)?,
         user_colours: Palette::parse(&vfs.require("user.pl")?)?,
+        group_digits: group_digits(&vfs)?,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })

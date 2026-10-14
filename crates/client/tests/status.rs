@@ -1,4 +1,4 @@
-use openstrike::status::{bars, Line, Owner, Status, AMMO, BACKGROUND, CREW, CREW_BAR, DAMAGED, HEALTHY, HOSTILE, OTHER, WRECKED};
+use openstrike::status::{bars, group_at, Line, Owner, Status, AMMO, BACKGROUND, CREW, CREW_BAR, DAMAGED, HEALTHY, HOSTILE, OTHER, WRECKED};
 
 fn pz4g(owner: Owner) -> Status {
     Status { owner, hp: 450, max_hp: 450, damaged_below: 300, crew: 0x8000, veteran: false, ammo: [122, 2700], max_ammo: [122, 2700] }
@@ -74,4 +74,9 @@ fn a_type_without_selector_draws_nothing_visible() {
 #[test]
 fn units_of_players_not_hostile_have_their_own_colour() {
     assert_eq!(bars((0, 0), 15, &pz4g(Owner::Other)).last().unwrap().colour, OTHER);
+}
+
+#[test]
+fn the_group_number_sits_over_the_right_end() {
+    assert_eq!(group_at((100, 50), 15), (111, 56));
 }
