@@ -103,6 +103,13 @@ pub fn frame_for(heading: u8) -> usize {
     (heading & 31) as usize
 }
 
+/// The units a side sees (`side_bit` = `1 << side`): those whose cell it sees, its own included
+/// since their sight covers their cell (the tank's vtable `+0x74`, `0x100333d0`).
+pub fn seen_units(world: &World, proj: &Projection, side_bit: u8) -> Vec<UnitView> {
+    let seen: Vec<bool> = world.units.iter().map(|u| u.seen_by & side_bit != 0).collect();
+    units(world, proj).into_iter().zip(seen).filter(|(_, s)| *s).map(|(v, _)| v).collect()
+}
+
 pub fn units(world: &World, proj: &Projection) -> Vec<UnitView> {
     world
         .units

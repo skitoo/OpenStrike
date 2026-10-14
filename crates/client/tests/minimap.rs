@@ -38,7 +38,7 @@ fn the_rhomb_is_centred_in_the_panel() {
 #[test]
 fn border_cells_leave_the_panel_visible() {
     let m = map(128);
-    let rgba = render(&m);
+    let rgba = render(&m, |_, _| true);
     let alpha = |x: i32, y: i32| rgba[((y * WIDTH + x) * 4 + 3) as usize];
     assert_eq!(alpha(ORIGIN_X, 4), 0); // cell (0, 0)
     assert_eq!(alpha(ORIGIN_X, 4 + 64), 255); // cell (64, 64)
@@ -98,4 +98,23 @@ fn units_are_dots_at_their_cell() {
     // halved maps: two cells per pixel
     let big = map(256);
     assert_eq!(dot(&big, 21 * 32, 13 * 32)[0], (ORIGIN_X + 4, origin_y(&big) + 8));
+}
+
+#[test]
+fn unseen_cells_are_darker() {
+    use openstrike::minimap::darken;
+    assert_eq!(darken(0xffff), 0x7bef); // each field halved
+    let m = map(128);
+    let rgba = render(&m, |x, _| x < 64);
+    let red = |x: i32, y: i32| rgba[((y * WIDTH + x) * 4) as usize];
+    // cell (60, 60) seen, cell (70, 60) not
+    let (seen, unseen) = ((ORIGIN_X, 4 + 60), (ORIGIN_X + 10 * 2, 4 + 65));
+    assert_eq!(red(seen.0, seen.1), 255);
+    assert!(red(unseen.0, unseen.1) < 130);
+}
+
+#[test]
+fn halved_maps_compare_the_doubled_cells_with_the_edge() {
+    // preview cell (2, 2) is map cell (4, 4): drawn
+    assert_eq!(target(&map(256), ORIGIN_X, 4 + 2), Some((2 * 64 + 32, 2 * 64 + 32)));
 }

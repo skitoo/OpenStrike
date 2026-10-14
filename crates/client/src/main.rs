@@ -254,6 +254,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         grid: terrain::build(&assets.map),
         curves: assets.curves.clone(),
         types: assets.vehicles.iter().map(|v| v.unit_type.clone()).collect(),
+        circles: assets.circles.clone(),
+        sides: assets.map.players.iter().map(|p| p.side).collect(),
     };
     let mut show_blocked = opts.show_blocked;
 
@@ -291,7 +293,9 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let font: Vec<Option<SpriteTexture>> = assets.font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
     let buttons: HashMap<usize, SpriteTexture> = assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
     let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
-    let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
+    let mut minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &[0; (minimap::WIDTH * minimap::HEIGHT * 4) as usize]);
+    // the tick the minimap was last drawn for
+    let mut minimap_tick = None;
 
     let kinds = assets.vehicles.iter().enumerate().map(|(i, v)| (v.name.to_ascii_lowercase(), i)).collect();
     let start = mission::start(&assets.map, &assets.unit_classes, &kinds, &rules.types);
@@ -299,6 +303,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         eprintln!("openstrike: units of classes not simulated yet, left out: {:?}", start.skipped);
     }
     let mut world = start.world;
+    world.place(&rules);
+    // the local player's side, as a bit (`[0x10387cad]`)
+    let local_side = assets.map.players.get(mission::HUMAN_PLAYER as usize).map_or(0, |p| p.side);
+    let local_bit = 1u8.checked_shl(local_side as u32).unwrap_or(0);
     // the game first centres the view on the middle of the map (Game_Dll.dll 0x10071e40); moving
     // it to the reinforcement zone given to the local player (0x100845f0) is not done yet
     let (lx, ly) = opts.look_at.unwrap_or(((proj.width * 16) as i32, (proj.height * 16) as i32));
@@ -381,7 +389,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 info_text = Some((info::expand(t, &assets.key_names), Default::default(), rl.get_time()));
             }
         } else if press.is_none()
-            && let Some(id) = selection::unit_at(&scene::units(&world, &proj), mouse_world)
+            && let Some(id) = selection::unit_at(&scene::seen_units(&world, &proj, local_bit), mouse_world)
             && let Some(u) = world.unit(id)
         {
             // the unit under the mouse, as the map view asks it (`0x100724d0`, not while dragging)
@@ -418,7 +426,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 },
             }
         }
-        let mut units: Vec<UnitView> = scene::units(&world, &proj);
+        let mut units: Vec<UnitView> = scene::seen_units(&world, &proj, local_bit);
 
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_none() {
             press = Some(mouse_world);
@@ -459,7 +467,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 selection::assign(&mut groups, &ids, &selected, g, shift);
                 continue;
             }
-            selected = selection::recall(&scene::units(&world, &proj), &selected, &groups, g, shift, mission::HUMAN_PLAYER);
+            selected = selection::recall(&scene::seen_units(&world, &proj, local_bit), &selected, &groups, g, shift, mission::HUMAN_PLAYER);
             let now = rl.get_time();
             if last_recall.is_some_and(|(last, at)| last == g && now - at < selection::RECALL_TWICE as f64) {
                 let cells: Vec<(i16, i16)> = world.units.iter().filter(|u| selected.contains(&u.id)).map(|u| u.cell).collect();
@@ -477,7 +485,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             pending.clear();
             accumulator -= tick;
         }
-        units = scene::units(&world, &proj);
+        units = scene::seen_units(&world, &proj, local_bit);
         // depth buckets, each filled by prepending while walking the unit list (`0x10070d00`)
         units.reverse();
         units.sort_by_key(UnitView::depth);
@@ -606,6 +614,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        if minimap_tick != Some(world.tick) {
+            minimap_texture.update_texture(&minimap::render(&assets.map, |x, y| world.sees(local_side, x, y))).expect("minimap size");
+            minimap_tick = Some(world.tick);
+        }
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
         d.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
@@ -721,7 +733,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 d.draw_rectangle(p.x as i32, p.y as i32, ui_scale, ui_scale, Color::new(r, g, b, 255));
             }
             // in the order of the game's unit list, so the last one wins a shared pixel
-            for u in &world.units {
+            for u in world.units.iter().filter(|u| u.seen_by & local_bit != 0) {
                 let (x, y) = u.position();
                 let Some(&[r, g, b]) = assets.user_colours.colours.get(minimap::PLAYER_COLOURS + u.player as usize) else { continue };
                 for (px, py) in minimap::dot(&assets.map, x >> 8, y >> 8) {

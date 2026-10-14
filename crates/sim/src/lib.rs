@@ -10,6 +10,7 @@ pub mod fmath;
 pub mod grid;
 mod motion;
 mod path;
+pub mod vision;
 
 pub use grid::Grid;
 
@@ -55,6 +56,10 @@ pub struct UnitType {
     pub ammo: [i32; 2],
     /// `MoveDamageHP`: hit points under which a vehicle is immobilised (`+0xb47`).
     pub move_damage_hp: i32,
+    /// `Sight a,b` in cells: `a` and `b - a` (`+0xc4`, `+0xc8`, each value kept in 1-31; 1 and 1 by
+    /// default, `0x10046356`).
+    pub sight_min: i32,
+    pub sight_range: i32,
 }
 
 impl UnitType {
@@ -75,12 +80,20 @@ impl UnitType {
             health: 1,
             ammo: [0, 0],
             move_damage_hp: 0,
+            sight_min: 1,
+            sight_range: 1,
         }
     }
 
     /// 1/256 px per tick (`0x100142e0`, without a towed gun).
     pub fn speed(&self, crew: i32) -> i32 {
         self.move_min + ((self.move_range * crew) >> 15)
+    }
+
+    /// Sight radius in cells (`+0x180`, `0x10034220`): `a + (b - a) * crew / 0x8000`, with the crew
+    /// condition raised for veterans (none yet).
+    pub fn sight(&self, crew: i32) -> i32 {
+        self.sight_min + ((self.sight_range * crew) >> 15)
     }
 
     pub fn turn_delay(&self, crew: i32) -> i32 {
@@ -95,9 +108,17 @@ pub struct Rules {
     /// `CURVENEW` points `(x, y)` in 1/256 px from the cell corner, per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
     pub types: Vec<UnitType>,
+    /// Sight rays by radius (`circ64.dat`); empty: no sight.
+    pub circles: vision::Circles,
+    /// Each player's side (the map's players, `0x1004f320`); players beyond are on side 0.
+    pub sides: Vec<u8>,
 }
 
 impl Rules {
+    fn side(&self, player: u8) -> u8 {
+        self.sides.get(player as usize).copied().unwrap_or(0)
+    }
+
     pub(crate) fn curve(&self, next: u8, previous: u8) -> &[(i16, i16)] {
         &self.curves[next as usize * 9 + previous as usize]
     }
@@ -234,6 +255,10 @@ pub struct Unit {
     pub hold_position: bool,
     /// SUSPENDRE LE FEU: does not fire by itself (bit 5 of `+0x1a`).
     pub hold_fire: bool,
+    /// Tick (mod 64) of its periodic sight (`+0x23`, drawn when placed).
+    pub phase: u8,
+    /// Sides that see its cell, read each tick (`+0x22`, `0x100342c0`).
+    pub seen_by: u8,
 }
 
 impl Unit {
@@ -264,6 +289,8 @@ impl Unit {
             moving: false,
             hold_position: false,
             hold_fire: false,
+            phase: 0,
+            seen_by: 0,
         }
     }
 
@@ -420,16 +447,35 @@ pub struct World {
     pub units: Vec<Unit>,
     /// Unit occupancy per cell (`0x101454e6`).
     pub occupancy: Vec<u32>,
+    /// What each side sees, per cell (`0x101c54e6`, see [`vision`]).
+    pub seen: Vec<u8>,
 }
 
 impl World {
     pub fn new(units: Vec<Unit>, seed: u32) -> Self {
-        let mut world = Self { tick: 0, rng: seed, units: Vec::new(), occupancy: vec![0; grid::CELLS] };
+        let mut world = Self { tick: 0, rng: seed, units: Vec::new(), occupancy: vec![0; grid::CELLS], seen: vec![0; grid::CELLS] };
         for u in units {
             motion::occupy(&mut world.occupancy, u.reservation, 1);
             world.units.push(u);
         }
         world
+    }
+
+    /// Put the units on the map as the game places them (`0x10033930`), in the order it created them
+    /// (the reverse of the list): each looks around, draws the tick of its periodic sight, and reads
+    /// what sees its cell.
+    pub fn place(&mut self, rules: &Rules) {
+        for i in (0..self.units.len()).rev() {
+            look(&mut self.seen, rules, &self.units[i]);
+            self.rng = lcg(self.rng);
+            self.units[i].phase = ((self.rng >> 16) & 0x3f) as u8;
+            read_sight(&self.seen, &mut self.units[i]);
+        }
+    }
+
+    /// Whether `side` sees the cell (its low nibble).
+    pub fn sees(&self, side: u8, x: i32, y: i32) -> bool {
+        side <= 3 && grid::index(x, y).is_some_and(|i| self.seen[i] & (1 << side) != 0)
     }
 
     pub fn unit(&self, id: UnitId) -> Option<&Unit> {
@@ -463,6 +509,24 @@ fn stop(unit: &mut Unit) {
     unit.order = Order::Idle;
 }
 
+/// The cell a unit looks from and is seen in: the one its centre is over (`+0x2f` + `+0x33 >> 13`).
+pub fn eye(unit: &Unit) -> (i32, i32) {
+    (unit.cell.0 as i32 + (unit.sub.0 >> 13) as i32, unit.cell.1 as i32 + (unit.sub.1 >> 13) as i32)
+}
+
+/// A unit's sight (the tank's vtable `+0x184`, `0x10034280`; not for dead units, none yet).
+fn look(seen: &mut [u8], rules: &Rules, unit: &Unit) {
+    let (x, y) = eye(unit);
+    let radius = rules.types[unit.kind].sight(unit.crew);
+    vision::circle(seen, &rules.grid, &rules.circles, x, y, radius, rules.side(unit.player));
+}
+
+/// Which sides see a unit (`+0x188`, `0x100342c0`): those that see its cell.
+fn read_sight(seen: &[u8], unit: &mut Unit) {
+    let (x, y) = eye(unit);
+    unit.seen_by = grid::index(x, y).map_or(0, |i| seen[i] & 0xf);
+}
+
 /// Advance the world by one tick.
 pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
     let mut w = world.clone();
@@ -484,9 +548,24 @@ pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
             Command::HoldFire { units, on } => w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_fire = *on),
         }
     }
+    // sight (`0x10090d59`, then `0x1003e520`): the refresh, the periodic sights by phase, what sees
+    // each unit; then the units' updates, where entering another cell may look again
+    if (w.tick + 4) & 63 == 0 {
+        vision::refresh(&mut w.seen, rules.grid.width, rules.grid.height);
+    }
+    for i in 0..w.units.len() {
+        if (w.tick & 63) as u8 == w.units[i].phase {
+            look(&mut w.seen, rules, &w.units[i]);
+        }
+    }
+    for i in 0..w.units.len() {
+        read_sight(&w.seen, &mut w.units[i]);
+    }
     for i in 0..w.units.len() {
         let mut unit = w.units[i].clone();
-        update(&mut unit, rules, &mut w.occupancy, &mut w.rng);
+        if update(&mut unit, rules, &mut w.occupancy, &mut w.rng) {
+            look(&mut w.seen, rules, &unit);
+        }
         w.units[i] = unit;
     }
     schedule_paths(&mut w, rules);
@@ -494,10 +573,12 @@ pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
     w
 }
 
-/// One unit's tick, as far as movement goes (`0x10014c00` and `0x10010b20`).
-fn update(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: &mut u32) {
+/// One unit's tick, as far as movement goes (`0x10014c00` and `0x10010b20`). True when it entered
+/// another cell and drew a new look around (`0x1002e415`).
+fn update(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: &mut u32) -> bool {
     unit.path.wait = unit.path.wait.saturating_sub(1);
-    let status = motion::drive(unit, rules, occupancy, rng);
+    let mut looks = false;
+    let status = motion::drive(unit, rules, occupancy, rng, &mut looks);
     motion::turn_turret(unit, rules);
     if let Order::Move { .. } = unit.order
         && matches!(status, motion::Status::Arrived | motion::Status::GaveUp)
@@ -505,6 +586,7 @@ fn update(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: &mut u32) 
         stop_moving(unit);
         unit.order = Order::Idle;
     }
+    looks
 }
 
 /// Order in which the scheduler handles a unit, and marks it for the others (`0x1002da60`).

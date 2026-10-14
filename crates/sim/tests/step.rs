@@ -27,7 +27,7 @@ fn tank() -> UnitType {
 }
 
 fn rules(grid: Grid) -> Rules {
-    Rules { grid, curves: curves(), types: vec![tank()] }
+    Rules { grid, curves: curves(), types: vec![tank()], circles: Vec::new(), sides: Vec::new() }
 }
 
 fn open() -> Rules {

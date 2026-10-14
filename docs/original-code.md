@@ -68,7 +68,7 @@ only.
 | `0x101054e6` | cell flags (u32): bits 0-3 blocked quarters, 11 ?, 14 no vehicles, 19 mine (`0x1004d740`), 20-23 mines known per player, 24-29 from a map section, 30 border, 31 checked for types with flag `0x2000000` (meaning unknown) |
 | `0x101454e6` | occupancy (u32): 4-bit counters per quarter, low and high halves |
 | `0x101854e6` | unit id per cell (u16), list through `unit + 0x0e` (`0x10033ed0` add, `0x10033f00` remove) |
-| `0x101c54e6` | per-cell byte read each tick into `unit + 0x22` (`0x100342c0`): visibility or zones, not read |
+| `0x101c54e6` | sight per cell: a bit per side in each nibble, low = seen, high = seen since the last refresh (see "Sight" below) |
 | `0x101d54e6` | per-cell byte for flagged types in `0x1003e870` |
 | `0x101e54e6` | obstacle marks for the path finder (u8), filled during the scheduler only |
 | `0x101ff3c8` | per player: mask of known mines |
@@ -85,6 +85,26 @@ quarter of their trunk (`0x10055410`) and freeing it when knocked down by a type
 with bit 31 (`0x100544b6`, `0x100548bd`); a class (vtable around `0x100abe90`) clearing bit 14
 (`0x10057892`); houses clearing bit 11 on 7 x 7 cells around them (`0x100505f7`). **No house code
 writes the quarters**: a house's passability is the one stored in the map.
+
+## Sight
+
+A unit looks around (the tank's vtable `+0x184`, `0x10034280`; not when dead) from the cell its centre is over
+(`+0x2f + (+0x33 >> 13)`, likewise y), with radius `+0x180` (`0x10034220`): `Sight a,b` of the type (`+0xc4` = a,
+`+0xc8` = b - a, each kept in 1-31, `0x10046e82`; 1 and 1 by default) as `a + (b - a) * crew >> 15`, the crew
+condition raised for veterans. `0x10032610` takes the player's side from its slot and calls `0x1004e070`: for each
+ray end of the radius (`circ64.dat`, `0x1004da50`, see `docs/formats.md`) a ray `0x1004dd40` sets `0x11 << side`
+on every cell it reaches, stepping by linear index with a 16.16 accumulator: it stops after a cell with `0x1800`
+in its flags, or, from a cell with `0x2000` on (the start included), after one with `0x800`. `0x1004e180` does the
+same over a sector (ray angles within half a width of a heading), `0x1004df30` fills a disc without rays.
+Each tick (`0x10090d59`, `0x1003e520`): when `(tick + 4) & 63 == 0` every cell's high nibble becomes its low one
+(`0x1004e220`); each unit whose phase `+0x23` is `tick & 63` looks around; each unit reads its cell's low nibble
+into `+0x22` (`+0x188`, `0x100342c0`; `+0x74` = alive and `+0x22` has the local side's bit, `0x100333d0`); then
+the units update, and one that enters another cell draws the generator and looks around when bit 16 is set
+(`0x1002e415`). Placing a unit (`0x10033930`) looks around, draws its phase (`rng >> 16 & 63`) and reads its cell.
+The minimap darkens the cells the local side (`[0x10387cad]` = `1 << side`) does not see (`0x1006f04b`; the
+halved minimap tests map cell `(2x, 2y)`, `0x1006f0a0`); the view builds a light map of 16 x 8 pixel tiles from
+the same bits each frame (`0x10071a10`: 0 unseen, 0x40 on the edge, 0x80 seen, then averaged) that the driver
+applies (not read yet).
 
 ## Units (tank vtable `0x100a83f0`)
 

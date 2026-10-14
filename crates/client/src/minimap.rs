@@ -44,17 +44,29 @@ pub fn cell(px: i32, py: i32) -> (i32, i32) {
     (py + (px >> 1), py - (px >> 1))
 }
 
-/// Whether the game draws that cell: at least 4 cells from the edge, compared with the map's size
-/// in cells as the game does, and inside the preview.
-fn shown(map: &Map, (x, y): (i32, i32)) -> bool {
+/// The map cell a preview cell stands for: itself, or `(2x, 2y)` for halved maps (`0x1006f0a0`).
+pub fn map_cell(map: &Map, (x, y): (i32, i32)) -> (i32, i32) {
+    if halved(map) { (x * 2, y * 2) } else { (x, y) }
+}
+
+/// Whether the game draws that cell: its map cell at least 4 cells from the edge, and inside the
+/// preview.
+fn shown(map: &Map, c: (i32, i32)) -> bool {
     let (pw, ph) = (map.preview_size.0 as i32, map.preview_size.1 as i32);
-    x >= 4 && y >= 4 && x < map.width as i32 - 4 && y < map.height as i32 - 4 && x < pw && y < ph
+    let (x, y) = map_cell(map, c);
+    x >= 4 && y >= 4 && x < map.width as i32 - 4 && y < map.height as i32 - 4 && c.0 < pw && c.1 < ph
+}
+
+/// A preview colour for a cell the local side does not see (`0x1006f04b`): each field halved,
+/// `(c & 0xf7de) >> 1` in RGB565 (the driver's mask `+0x50` drops each field's lowest bit).
+pub fn darken(c: u16) -> u16 {
+    (c & 0xf7de) >> 1
 }
 
 /// The minimap as RGBA8, `WIDTH x HEIGHT`, row 0 at the panel's row 0; transparent where the
-/// panel shows through. Every cell is drawn as seen (the game darkens unseen ones, `0x1006f04b`;
-/// there is no fog of war yet).
-pub fn render(map: &Map) -> Vec<u8> {
+/// panel shows through. Cells whose map cell the local side does not see (`seen(x, y)` false) are
+/// darkened.
+pub fn render(map: &Map, seen: impl Fn(i32, i32) -> bool) -> Vec<u8> {
     let mut out = vec![0u8; (WIDTH * HEIGHT * 4) as usize];
     let oy = origin_y(map);
     for row in 0..HEIGHT {
@@ -65,7 +77,9 @@ pub fn render(map: &Map) -> Vec<u8> {
             }
             let c = cell(px, py);
             if shown(map, c) {
-                let rgb = rgb565(map.preview[(c.1 * map.preview_size.0 as i32 + c.0) as usize]);
+                let colour = map.preview[(c.1 * map.preview_size.0 as i32 + c.0) as usize];
+                let (mx, my) = map_cell(map, c);
+                let rgb = rgb565(if seen(mx, my) { colour } else { darken(colour) });
                 out[((row * WIDTH + col) * 4) as usize..][..4].copy_from_slice(&[rgb[0], rgb[1], rgb[2], 255]);
             }
         }

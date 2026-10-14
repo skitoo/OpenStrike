@@ -75,7 +75,7 @@ fn a_tank_crosses_the_rhine() {
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
     let a = assets::load(&dir, &map_path, None, &["t-26"]).unwrap();
     let t26 = a.vehicles.iter().find(|v| v.name == "t-26").unwrap();
-    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![t26.unit_type.clone()] };
+    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![t26.unit_type.clone()], circles: Vec::new(), sides: Vec::new() };
     let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
     let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
     let (from, to) = (near(30, 44), near(100, 48));
@@ -165,4 +165,31 @@ fn the_information_bar_has_its_texts_and_font() {
     assert_eq!(a.key_names["00"], "A");
     assert_eq!(a.key_names["hm"], "R");
     assert!(a.font[b'A' as usize].as_ref().is_some_and(|g| g.width > 0));
+}
+
+#[test]
+fn placed_units_see_around_them() {
+    let Some(dir) = data_dir() else { return };
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
+    let kinds = a.vehicles.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
+    let types: Vec<_> = a.vehicles.iter().map(|v| v.unit_type.clone()).collect();
+    let pz4g = a.vehicles.iter().find(|v| v.name == "pz4g").unwrap();
+    assert_eq!((pz4g.unit_type.sight_min, pz4g.unit_type.sight_range), (9, 2));
+    let rules = Rules {
+        grid: terrain::build(&a.map),
+        curves: a.curves.clone(),
+        types: types.clone(),
+        circles: a.circles.clone(),
+        sides: a.map.players.iter().map(|p| p.side).collect(),
+    };
+    let mut world = mission::start(&a.map, &a.unit_classes, &kinds, &types).world;
+    let rng = world.rng;
+    world.place(&rules);
+    assert_ne!(world.rng, rng); // a phase drawn per unit
+    let tank = world.units.iter().find(|u| u.player == 0).unwrap();
+    let (x, y) = openstrike_sim::eye(tank);
+    // player 0 is on side 0: it sees its own cell, so its tank is seen; nothing far away
+    assert!(world.sees(0, x, y) && tank.seen_by & 1 != 0);
+    assert!(!world.sees(0, x + 40, y));
+    assert!(world.sees(0, x - 5, y) || world.sees(0, x, y - 5));
 }

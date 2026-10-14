@@ -184,6 +184,13 @@ that one pixel, on the widget's pixels only (`0x1006e470`), in `user.pl` colour 
 (bit 0 of `+0x1a`) or not seen by the local player (`0x100333d0`). **Accepted difference**: OpenStrike draws a 2 x 2 square
 from that pixel (still on the widget's pixels only), one pixel being too small to see on today's screens.
 
+## Sight rays `circ64.dat`
+
+`common.sue`; read by `Game_Dll.dll` `0x1004da50` when `[0x10388454]` is set (a new game, `0x10091547`): for
+radius 1 to 63, u16 count then `count` records of i8 dx, i8 dy, u8 angle (0-255 from west) — the ends of the rays a
+unit with that sight radius casts (8 for radius 1, 16 for 2, 80 for 10). `circ.dat` (radius 1-31, records of dx,
+dy only) serves saves of older versions. Parser: `crates/formats/src/circles.rs`.
+
 ## Keys `key.map`
 
 Text file at the root of the install (also in `common.sue`): pairs of lines, a name (`key_g0`) then a virtual key

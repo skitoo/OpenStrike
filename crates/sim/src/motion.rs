@@ -160,7 +160,7 @@ fn curve_end(rules: &Rules, c: CurveState) -> Option<(i16, i16)> {
 }
 
 /// Drive for one tick (`0x1002dee0`).
-pub(crate) fn drive(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: &mut u32) -> Status {
+pub(crate) fn drive(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: &mut u32, looks: &mut bool) -> Status {
     unit.moving = true;
     loop {
         let dx = unit.aim.0 as i32 - unit.sub.0 as i32;
@@ -184,8 +184,9 @@ pub(crate) fn drive(unit: &mut Unit, rules: &Rules, occupancy: &mut [u32], rng: 
             unit.sub.1 = unit.sub.1.wrapping_add((step * dy / dist) as i16);
             let after = ((unit.sub.0 >> 13) as i32 + cx, (unit.sub.1 >> 13) as i32 + cy);
             if before.0 != after.0 || before.1 != after.1 {
-                // crossing into another cell's area draws a number for the view update
+                // crossing into another cell's area looks around again one time in two (`0x1002e415`)
                 *rng = lcg(*rng);
+                *looks = *rng & 0x10000 != 0;
             }
             return Status::Moved;
         }

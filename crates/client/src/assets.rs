@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use openstrike_formats::ini::Ini;
-use openstrike_formats::{curves, desc, hot, interface};
+use openstrike_formats::{circles, curves, desc, hot, interface};
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
 use openstrike_formats::objects::{self, ObjectSet};
@@ -84,6 +84,8 @@ pub struct Assets {
     pub texts: Vec<String>,
     /// The key names of `key.map` by action, lowercase (`00` -> `A`).
     pub key_names: HashMap<String, String>,
+    /// Sight rays by radius (`circ64.dat`).
+    pub circles: openstrike_sim::vision::Circles,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -218,6 +220,11 @@ pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32, String
     t.health = d.int("Health", 0).unwrap_or(t.health);
     t.ammo = [d.int("Ammo1", 0).unwrap_or(0), d.int("Ammo2", 0).unwrap_or(0)];
     t.move_damage_hp = d.int("MoveDamageHP", 0).unwrap_or(0);
+    // `Sight a,b`, each kept in 1-31 (`0x10046e82`)
+    if let (Some(a), Some(b)) = (d.int("Sight", 0), d.int("Sight", 1)) {
+        let (a, b) = (a.clamp(1, 31), b.clamp(1, 31));
+        (t.sight_min, t.sight_range) = (a, b - a);
+    }
     let file = d.get("File").and_then(|v| v.first()).ok_or_else(|| missing("File"))?.to_ascii_lowercase();
     Ok((t, file, d.int("Selector", 0).unwrap_or(1), d.string("Name").unwrap_or_default()))
 }
@@ -315,6 +322,7 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         texts: interface::texts(&vfs.require("intrtext.dat")?)?,
         key_names: key_names(data_dir, &vfs)?,
         buttons: (29..=86).map(|i| Ok((i, interface_frame(&vfs, i)?))).collect::<Result<_, Error>>()?,
+        circles: circles::parse(&vfs.require("circ64.dat")?)?.into_iter().map(|c| c.iter().map(|e| (e.dx, e.dy)).collect()).collect(),
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })
