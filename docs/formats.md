@@ -183,7 +183,7 @@ from that pixel (still on the widget's pixels only), one pixel being too small t
 ## Interface colours `user.pl`
 
 256 RGB565 colours per climate, loaded by `Game_Dll.dll` `0x10082240` into `0x10387cb0`. Entry 96 is used by
-`0x10070499` (likely the selection rectangle), 97 by the minimap's view frame, 64-73 by the units on the minimap
+`0x10070499` (the selection rectangle), 97 by the minimap's view frame, 64-73 by the units on the minimap
 (`64 + player`); `0x10387d2c` (entry 62 onwards) is
 passed as a palette to the text drawing.
 

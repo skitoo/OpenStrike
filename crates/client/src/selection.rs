@@ -10,6 +10,19 @@ pub const HIT_BOX: (i32, i32, i32, i32) = (-24, -26, 24, 10);
 /// Drags shorter than this (in world-screen pixels) are clicks.
 pub const CLICK_SLOP: f32 = 4.0;
 
+/// Entry of `user.pl` the selection rectangle is drawn in (`Game_Dll.dll` `0x10070499`,
+/// `[0x10387d70]`): green.
+pub const RECT_COLOUR: usize = 96;
+
+/// The selection rectangle as the game draws it (`0x10070460`): from the press to the mouse, in
+/// screen pixels, both corners included, as a one-pixel outline (`cad800.dll` `0x100023f0`); shown
+/// from the press on, whatever its size. Returns x, y, width and height.
+pub fn outline(a: (i32, i32), b: (i32, i32)) -> (i32, i32, i32, i32) {
+    let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
+    let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
+    (x0, y0, x1 - x0 + 1, y1 - y0 + 1)
+}
+
 fn hit(u: &UnitView, x: f32, y: f32) -> bool {
     let (sx, sy) = (u.screen.0 as f32, u.screen.1 as f32);
     x >= sx + HIT_BOX.0 as f32 && x <= sx + HIT_BOX.2 as f32 && y >= sy + HIT_BOX.1 as f32 && y <= sy + HIT_BOX.3 as f32

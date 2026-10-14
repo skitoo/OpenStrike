@@ -473,13 +473,12 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             if show_blocked {
                 draw_blocked(&mut m, &rules.grid, &proj, view);
             }
-            if let Some(start) = press {
-                let (x0, y0) = (start.0.min(mouse_world.0), start.1.min(mouse_world.1));
-                let (w, h) = ((start.0 - mouse_world.0).abs(), (start.1 - mouse_world.1).abs());
-                if w.max(h) >= selection::CLICK_SLOP {
-                    m.draw_rectangle_lines(x0 as i32, y0 as i32, w as i32, h as i32, Color::LIME);
-                }
-            }
+        }
+        if let Some(start) = press {
+            let on_screen = |p: (f32, f32)| (((p.0 - cam.x) * cam.zoom).floor() as i32, ((p.1 - cam.y) * cam.zoom).floor() as i32);
+            let (x, y, w, h) = selection::outline(on_screen(start), (mouse.x as i32, mouse.y as i32));
+            let [r, g, b] = assets.user_colours.colours[selection::RECT_COLOUR];
+            d.draw_rectangle_lines(x, y, w, h, Color::new(r, g, b, 255));
         }
         {
             let at = |x: i32, y: i32| Vector2::new((panel_origin.0 + x * ui_scale) as f32, (panel_origin.1 + y * ui_scale) as f32);
