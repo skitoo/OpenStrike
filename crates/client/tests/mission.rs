@@ -1,4 +1,4 @@
-use openstrike::mission::hostile;
+use openstrike::mission::{friendly, hostile};
 use openstrike_formats::map::MapPlayer;
 
 fn players(sides: &[u8]) -> Vec<MapPlayer> {
@@ -18,4 +18,11 @@ fn single_player_sides() {
     assert!(hostile(&p, 0, 2));
     // players the map does not list are on side 0
     assert!(hostile(&p, 5, 1) && !hostile(&p, 5, 0));
+}
+
+#[test]
+fn friends_include_the_player_itself_and_its_allies() {
+    let p = players(&[0, 1, 2, 3]);
+    assert!(friendly(&p, 0, 0) && friendly(&p, 0, 2) && friendly(&p, 1, 1));
+    assert!(!friendly(&p, 0, 1) && !friendly(&p, 0, 3));
 }

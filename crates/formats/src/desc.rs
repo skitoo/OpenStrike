@@ -16,6 +16,8 @@ pub struct Entry {
     /// Lowercase.
     pub key: String,
     pub values: Vec<String>,
+    /// The rest of the line after the key, trimmed.
+    pub raw: String,
 }
 
 #[derive(Debug, Clone, Default, PartialEq)]
@@ -29,6 +31,17 @@ impl Desc {
     pub fn get(&self, key: &str) -> Option<&[String]> {
         let key = key.to_ascii_lowercase();
         self.entries.iter().rev().find(|e| e.key == key).map(|e| &e.values[..])
+    }
+
+    /// The text of `key`: what is between the quotes when it starts with one (`Name "PANZER IV J
+    /// (75.0 MM), CHAR LEGER"`), else its first value.
+    pub fn string(&self, key: &str) -> Option<String> {
+        let key = key.to_ascii_lowercase();
+        let e = self.entries.iter().rev().find(|e| e.key == key)?;
+        match e.raw.strip_prefix('"') {
+            Some(rest) => Some(rest.split('"').next().unwrap_or("").to_string()),
+            None => e.values.first().cloned(),
+        }
     }
 
     /// `i`-th value of `key` as an integer (C `atoi`: leading digits, 0 if none).
@@ -87,7 +100,8 @@ fn expand(name: &str, read: &mut dyn FnMut(&str) -> Option<Vec<u8>>, desc: &mut 
         }
         let mut tokens = line.split(|c: char| c.is_whitespace() || c == ',').filter(|t| !t.is_empty());
         if let Some(key) = tokens.next() {
-            desc.entries.push(Entry { key: key.to_ascii_lowercase(), values: tokens.map(str::to_string).collect() });
+            let raw = line[key.len()..].trim().to_string();
+            desc.entries.push(Entry { key: key.to_ascii_lowercase(), values: tokens.map(str::to_string).collect(), raw });
         }
     }
     Ok(())

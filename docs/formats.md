@@ -156,7 +156,7 @@ Decoder: `crates/formats/src/hot.rs`. Other vehicles have more points (`bron.hot
 Frame 0 is not a picture but the panel's layout, 16-byte records of four i32 (the window's `+0x60`): records 1-8
 look like button rectangles (x0, y0, x1, y1), record 10 is the minimap origin (132, 6). Frame 1 is the panel (352 x 136: minimap rhomb, 3 x 3 command grid, menu button), which the game opens as the
 `PANL` window in the bottom left corner of the screen (`0x1006f540`); frame 2 a 352 x 15 strip, frame 5 the
-368 x 32 message bar (filter buttons L, EX, A, A), frames 15 and up buttons and command icons (two or three
+368 x 32 information bar (field labels L, EX, A, A; frames 7-10 are the same labels lit), frames 15 and up buttons and command icons (two or three
 states each), frames 11-13 collections (fonts and markers drawn over units, used as `+0x30`, `+0x34`): 256 u32
 offsets from the collection's start, one sprite per index (`Game_Dll.dll` `0x100921c0`; indices of 0x100 and up
 go through wider tables at `+0x3fc`, `+0x7fc`). Frame 13 is a small font indexed by character code: the group
@@ -251,6 +251,16 @@ string `[0x1029958c + 4 * tip]`, type 2), and the bar takes the text (`0x10077c3
 time, then goes back to its default text; `~key_xx~` becomes the key's name in `key.map` (`0x10077d90`). Text
 (`0x1005b100`): left-aligned, each character the glyph of its code in frame 11 (palette `intr.pl`), advancing by
 the glyph's width + 2.
+
+Over a unit, the map view (`0x100724d0`; nothing while a selection rectangle is drawn) asks the unit under the
+mouse (`0x10070810`) for a type 1 record (its vtable `+0xa0`, a tank's `0x100331c0`): its type's `Name`
+(`+0x24`), its hit points and their percentage (at least 1), its crew condition out of 1000 as shown (raised for
+veterans) and its own, and, for a unit on a side friendly to the local player (`[0x101ff3ac + 2 * local]`), both
+ammunitions and their percentages (else -1, hidden). The bar shows the name, then four fields (`0x100781c0`): the
+icon of frame `7 + i` (66 x 13: L, EX, A, A) at layout record `2i + 3`, a gauge on record `2i + 4` (53 x 2) in
+`user.pl` colour 2, 7, 3, 3 (the crew's own condition over it in 8), and the value centred under it, glyph
+bottom 5 pixels below the gauge (`%i`, or `%i/%i` own / shown for the crew when they differ) in frame 13's font,
+palette `user.pl` from entry 58.
 
 ## Interface colours `user.pl`
 

@@ -29,6 +29,14 @@ const FRIENDS: [u8; 4] = [0b101, 0b010, 0b101, 0];
 /// Sides hostile to each side in single player: 1 to 0 and 2, and the other way round.
 const FOES: [u8; 4] = [0b010, 0b101, 0b010, 0];
 
+/// Whether player `q` is on a side friendly to `p`'s (`[0x101ff3ac + 2 * p]`, `0x1004ef20`), `p`'s
+/// own included.
+pub fn friendly(players: &[MapPlayer], p: u8, q: u8) -> bool {
+    let side = |p: u8| players.get(p as usize).map_or(0, |pl| pl.side as usize);
+    let bit = 1u8.checked_shl(side(q) as u32).unwrap_or(0);
+    FRIENDS.get(side(p)).copied().unwrap_or(0) & bit != 0
+}
+
 /// How player `p` sees player `q` (`0x1004ef20`: from their sides, `[0x101ff3ac + 2 * p]` gets
 /// the friends' bits and `[0x101ff390 + 2 * p]` the others' that are hostile). The map lists the
 /// players with their side; a player it does not list is on side 0.

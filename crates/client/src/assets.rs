@@ -34,6 +34,8 @@ pub struct VehicleSprites {
 pub struct Vehicle {
     /// Description name (`units/<name>` in `desc_common`).
     pub name: String,
+    /// `Name`, the name the information bar shows (the type's `+0x24`).
+    pub title: String,
     pub unit_type: UnitType,
     /// `Selector`: half the width of the status bars drawn under the unit when selected (`+0xb4`,
     /// read by `0x10046d2f`; 1 by default).
@@ -71,6 +73,13 @@ pub struct Assets {
     pub info_bar: Image,
     /// The interface font (`intrpic.dat` frame 11, palette `intr.pl`), a glyph per character code.
     pub font: Vec<Option<Image>>,
+    /// The information bar's layout (`intrpic.dat` frame 4).
+    pub info_layout: Vec<[i32; 4]>,
+    /// The icons of its four fields (`intrpic.dat` frames 7-10).
+    pub info_icons: Vec<Image>,
+    /// The small font of the fields' values (`intrpic.dat` frame 13, palette `user.pl` from entry 58,
+    /// `0x10387d24`), a glyph per character code.
+    pub small_font: Vec<Option<Image>>,
     /// `intrtext.dat`.
     pub texts: Vec<String>,
     /// The key names of `key.map` by action, lowercase (`00` -> `A`).
@@ -149,6 +158,18 @@ fn font(vfs: &Vfs) -> Result<Vec<Option<Image>>, Error> {
     Ok((0..=255u8).map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok())).collect())
 }
 
+/// See [`Assets::small_font`].
+fn small_font(vfs: &Vfs) -> Result<Vec<Option<Image>>, Error> {
+    let user = vfs.require("user.pl")?;
+    let mut shifted = user.get(58 * 2..).ok_or("user.pl: too short")?.to_vec();
+    shifted.resize(512, 0);
+    let palette = Palette::parse(&shifted)?;
+    let data = vfs.require("intrpic.dat")?;
+    let frames = sprite::pck_frames(&data)?;
+    let font = frames.get(13).ok_or("intrpic.dat: no frame 13")?;
+    Ok((0..=255u8).map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok())).collect())
+}
+
 /// See [`Assets::key_names`]: the game reads `key.map` from the install's root.
 fn key_names(data_dir: &Path, vfs: &Vfs) -> Result<HashMap<String, String>, Error> {
     let data = match find_file(data_dir, "key.map") {
@@ -159,11 +180,12 @@ fn key_names(data_dir: &Path, vfs: &Vfs) -> Result<HashMap<String, String>, Erro
     Ok(names.into_iter().map(|(k, v)| (k.to_ascii_lowercase(), v)).collect())
 }
 
-/// See [`Assets::layout`].
-fn layout(vfs: &Vfs) -> Result<Vec<[i32; 4]>, Error> {
+/// A layout of `intrpic.dat` (frame 0 the panel's, 4 the information bar's): 16-byte records of x0,
+/// y0, x1, y1.
+fn layout(vfs: &Vfs, frame: usize) -> Result<Vec<[i32; 4]>, Error> {
     let data = vfs.require("intrpic.dat")?;
     let frames = sprite::pck_frames(&data)?;
-    let frame = frames.first().ok_or("intrpic.dat: no frame 0")?;
+    let frame = frames.get(frame).ok_or("intrpic.dat: no layout frame")?;
     Ok(frame
         .as_chunks::<16>()
         .0
@@ -184,8 +206,8 @@ fn group_digits(vfs: &Vfs) -> Result<Vec<Image>, Error> {
     (0x30..=0x39).map(|c| Ok(sprite::decode(sprite::collection_frame(font, c)?, &palette)?)).collect()
 }
 
-/// Simulation parameters, sprite file and `Selector` of a unit from its description.
-pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32), Error> {
+/// Simulation parameters, sprite file, `Selector` and `Name` of a unit from its description.
+pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32, String), Error> {
     let d = desc::load(&format!("units/{name}"), &mut |n| vfs.read(n).ok().flatten())?;
     let missing = |key: &str| format!("{name}: no {key} in the description");
     let speed = (d.float("MoveSpeed", 0).ok_or_else(|| missing("MoveSpeed"))?, d.float("MoveSpeed", 1).ok_or_else(|| missing("MoveSpeed"))?);
@@ -197,12 +219,12 @@ pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32), Error
     t.ammo = [d.int("Ammo1", 0).unwrap_or(0), d.int("Ammo2", 0).unwrap_or(0)];
     t.move_damage_hp = d.int("MoveDamageHP", 0).unwrap_or(0);
     let file = d.get("File").and_then(|v| v.first()).ok_or_else(|| missing("File"))?.to_ascii_lowercase();
-    Ok((t, file, d.int("Selector", 0).unwrap_or(1)))
+    Ok((t, file, d.int("Selector", 0).unwrap_or(1), d.string("Name").unwrap_or_default()))
 }
 
 pub fn vehicle(vfs: &Vfs, name: &str) -> Result<Vehicle, Error> {
-    let (unit_type, file, selector) = unit_type(vfs, name)?;
-    Ok(Vehicle { name: name.to_string(), unit_type, selector, sprites: vehicle_sprites(vfs, &file)? })
+    let (unit_type, file, selector, title) = unit_type(vfs, name)?;
+    Ok(Vehicle { name: name.to_string(), title, unit_type, selector, sprites: vehicle_sprites(vfs, &file)? })
 }
 
 pub fn vehicle_sprites(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
@@ -284,7 +306,10 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         panel: interface_frame(&vfs, 1)?,
         user_colours: Palette::parse(&vfs.require("user.pl")?)?,
         group_digits: group_digits(&vfs)?,
-        layout: layout(&vfs)?,
+        layout: layout(&vfs, 0)?,
+        info_layout: layout(&vfs, 4)?,
+        info_icons: (7..=10).map(|i| interface_frame(&vfs, i)).collect::<Result<_, _>>()?,
+        small_font: small_font(&vfs)?,
         info_bar: interface_frame(&vfs, 5)?,
         font: font(&vfs)?,
         texts: interface::texts(&vfs.require("intrtext.dat")?)?,

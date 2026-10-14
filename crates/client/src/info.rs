@@ -52,3 +52,52 @@ pub fn layout(text: &str, width: impl Fn(u8) -> i32) -> Vec<(i32, u8)> {
         })
         .collect()
 }
+
+/// The fields of the bar for a unit under the mouse (`0x100331c0`, the tank's vtable `+0xa0`, a
+/// type 1 record): hit points, crew, then both ammunitions (only for units of a friendly side,
+/// `[0x101ff3ac + 2 * local]`). Each is drawn (`0x100781c0`) as its icon (`intrpic.dat` frame
+/// `7 + field` on the bar's layout record `2 * field + 3`), a gauge on record `2 * field + 4` and the
+/// value centred under it.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Field {
+    pub value: String,
+    /// Percentage shown by the gauge.
+    pub percent: i32,
+    /// Percentage of the crew's own condition, drawn over the crew gauge (all of it unless veterans
+    /// raise the gauge).
+    pub under: Option<i32>,
+}
+
+/// Gauge colours, `user.pl` entries, by field; the crew's own condition is entry 8.
+pub const GAUGE_COLOURS: [usize; 4] = [2, 7, 3, 3];
+pub const CREW_COLOUR: usize = 8;
+
+/// A unit's fields. `crew_shown` is the crew condition the status bars show (raised for veterans).
+pub fn unit_fields(hp: i32, max_hp: i32, crew: i32, crew_shown: i32, ammo: [i32; 2], max_ammo: [i32; 2], friendly: bool) -> [Option<Field>; 4] {
+    let hp_percent = (hp * 100 / max_hp).max(1);
+    let shown = (crew_shown * 1000) >> 15;
+    let own = (crew * 1000) >> 15;
+    let crew_field = Field {
+        value: if own != shown { format!("{own}/{shown}") } else { shown.to_string() },
+        percent: shown * 100 / 1000,
+        under: Some(own * 100 / 1000),
+    };
+    let ammo_field = |i: usize| {
+        (friendly && max_ammo[i] != 0)
+            .then(|| Field { value: ammo[i].to_string(), percent: ammo[i] * 100 / max_ammo[i], under: None })
+    };
+    [Some(Field { value: hp.to_string(), percent: hp_percent, under: None }), Some(crew_field), ammo_field(0), ammo_field(1)]
+}
+
+/// Length of a gauge `width` pixels wide for `percent` (`0x10077fb0`).
+pub fn gauge(width: i32, percent: i32) -> i32 {
+    if percent > 0 { width * percent / 100 } else { 0 }
+}
+
+/// Like [`layout`], centred on 0 (`0x1005b100` with alignment 2: the start moves back by half the
+/// total advance).
+pub fn layout_centred(text: &str, width: impl Fn(u8) -> i32) -> Vec<(i32, u8)> {
+    let glyphs = layout(text, &width);
+    let total: i32 = text.chars().map(|c| width(u32::from(c).min(255) as u8) + SPACING).sum();
+    glyphs.into_iter().map(|(x, c)| (x - (total >> 1), c)).collect()
+}

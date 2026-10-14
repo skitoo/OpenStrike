@@ -286,6 +286,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
     let panel = upload_sprite(&mut rl, &thread, &assets.panel);
     let info_bar = upload_sprite(&mut rl, &thread, &assets.info_bar);
+    let info_icons: Vec<SpriteTexture> = assets.info_icons.iter().map(|i| upload_sprite(&mut rl, &thread, i)).collect();
+    let small_font: Vec<Option<SpriteTexture>> = assets.small_font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
     let font: Vec<Option<SpriteTexture>> = assets.font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
     let buttons: HashMap<usize, SpriteTexture> = assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
     let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
@@ -306,8 +308,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut groups = selection::Groups::new();
     // the order waiting for a target (`[0x103880bc]`)
     let mut armed: Option<u8> = None;
-    // the information bar's text and when it was last given
-    let mut info_text: Option<(String, f64)> = None;
+    // the information bar's text, its fields and when they were last given
+    let mut info_text: Option<(String, [Option<info::Field>; 4], f64)> = None;
     // the last group key pressed and when, for the second press that centres the view
     let mut last_recall: Option<(u8, f64)> = None;
     let mut press: Option<(f32, f32)> = None;
@@ -376,8 +378,17 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 (capabilities & (1 << k) != 0 && in_record(assets.layout[orders::HOLD_RECORDS[k]], p)).then_some(info::HOLD_TEXTS[k])
             });
             if let Some(t) = grid_text.or(hold_text).and_then(|t| assets.texts.get(t)) {
-                info_text = Some((info::expand(t, &assets.key_names), rl.get_time()));
+                info_text = Some((info::expand(t, &assets.key_names), Default::default(), rl.get_time()));
             }
+        } else if press.is_none()
+            && let Some(id) = selection::unit_at(&scene::units(&world, &proj), mouse_world)
+            && let Some(u) = world.unit(id)
+        {
+            // the unit under the mouse, as the map view asks it (`0x100724d0`, not while dragging)
+            let t = &rules.types[u.kind];
+            let friendly = mission::friendly(&assets.map.players, mission::HUMAN_PLAYER, u.player);
+            let fields = info::unit_fields(u.hp, t.health, u.crew, u.crew, u.ammo, t.ammo, friendly);
+            info_text = Some((assets.vehicles[u.kind].title.clone(), fields, rl.get_time()));
         }
         let clicked = |r: usize| {
             rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_some_and(|p| in_record(assets.layout[r], p))
@@ -663,9 +674,36 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
             d.draw_texture_ex(&info_bar.texture, at(bar_origin.0, bar_origin.1), 0.0, s, Color::WHITE);
             let now = d.get_time();
-            if let Some((text, given)) = &info_text
+            if let Some((text, fields, given)) = &info_text
                 && now - given < info::HOLD_SECONDS
             {
+                let bar = |r: usize| assets.info_layout[r];
+                for (i, field) in fields.iter().enumerate() {
+                    let Some(field) = field else { continue };
+                    let icon = &info_icons[i];
+                    let r = bar(2 * i + 3);
+                    d.draw_texture_ex(&icon.texture, at(bar_origin.0 + r[0] + icon.anchor.0, bar_origin.1 + r[1] + icon.anchor.1), 0.0, s, Color::WHITE);
+                    let g = bar(2 * i + 4);
+                    let (width, height) = (g[2] - g[0] + 1, g[3] - g[1] + 1);
+                    let mut gauge = |percent: i32, colour: usize| {
+                        let len = info::gauge(width, percent);
+                        let [r, gr, b] = assets.user_colours.colours[colour];
+                        let p = at(bar_origin.0 + g[0], bar_origin.1 + g[1]);
+                        d.draw_rectangle(p.x as i32, p.y as i32, len * ui_scale, height * ui_scale, Color::new(r, gr, b, 255));
+                    };
+                    gauge(field.percent, info::GAUGE_COLOURS[i]);
+                    if let Some(under) = field.under {
+                        gauge(under, info::CREW_COLOUR);
+                    }
+                    let swidth = |c: u8| small_font[c as usize].as_ref().map_or(0, |g| g.size.0);
+                    let (cx, cy) = ((g[0] + g[2]) / 2, g[3] + 6);
+                    for (x, c) in info::layout_centred(&field.value, swidth) {
+                        if let Some(glyph) = &small_font[c as usize] {
+                            let p = at(bar_origin.0 + cx + x + glyph.anchor.0, bar_origin.1 + cy + glyph.anchor.1);
+                            d.draw_texture_ex(&glyph.texture, p, 0.0, s, Color::WHITE);
+                        }
+                    }
+                }
                 let width = |c: u8| font[c as usize].as_ref().map_or(0, |g| g.size.0);
                 for (x, c) in info::layout(text, width) {
                     if let Some(g) = &font[c as usize] {
