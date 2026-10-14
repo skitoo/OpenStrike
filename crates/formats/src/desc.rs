@@ -92,3 +92,20 @@ fn expand(name: &str, read: &mut dyn FnMut(&str) -> Option<Vec<u8>>, desc: &mut 
     }
     Ok(())
 }
+
+/// `desc_common/units/UNITS`: the class of each unit type, one `class name` pair per line (`-`
+/// lines are comments). The game's type factory (`Game_Dll.dll` around `0x1004b54e`) builds the type
+/// object of that class: `tank`, `tank2`, `samo`, `atg`, `gaub`, `szenit`, `mzenit`, `apc`, `jeep`,
+/// `gruz`, `furg`, `medic`, `guner`, `art`, `para`, `crate`, `house`, `machine`, `katya`.
+/// Returns (lowercase type name, lowercase class) pairs in file order.
+pub fn unit_classes(text: &str) -> Vec<(String, String)> {
+    text.lines()
+        .filter(|l| !l.trim_start().starts_with('-'))
+        .filter_map(|l| {
+            let mut words = l.split_whitespace();
+            let (class, name) = (words.next()?, words.next()?);
+            Some((name.to_ascii_lowercase(), class.to_ascii_lowercase()))
+        })
+        .collect()
+}
+

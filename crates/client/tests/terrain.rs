@@ -2,7 +2,7 @@
 
 use std::path::PathBuf;
 
-use openstrike::{assets, terrain};
+use openstrike::{assets, mission, terrain};
 use openstrike_formats::map::GROUND_WATER;
 use openstrike_formats::objects::{BRIDGE_OPEN, BRIDGE_PART, BRIDGE_SIZE, FOOTPRINT_ORIGIN, FOOTPRINT_SOLID, bridge_tile};
 use openstrike_sim::{Command, Order, Rules, Unit, UnitId, World, step};
@@ -74,7 +74,8 @@ fn a_tank_crosses_the_rhine() {
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
     let a = assets::load(&dir, &map_path, None, &["t-26"]).unwrap();
-    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![a.vehicles[0].unit_type.clone()] };
+    let t26 = a.vehicles.iter().find(|v| v.name == "t-26").unwrap();
+    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![t26.unit_type.clone()] };
     let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
     let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
     let (from, to) = (near(30, 44), near(100, 48));
@@ -94,16 +95,31 @@ fn a_tank_crosses_the_rhine() {
 }
 
 #[test]
-fn the_platoon_loads() {
+fn extra_vehicles_load_after_the_maps_own() {
     let Some(dir) = data_dir() else { return };
     let map_path = dir.join("Maps/single/'Act of Sabotage'.ssm");
-    let names = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman5"];
+    let names = ["t-26", "t-34", "kv-1"];
     let a = assets::load(&dir, &map_path, None, &names).unwrap();
     let loaded: Vec<&str> = a.vehicles.iter().map(|v| v.name.as_str()).collect();
-    assert_eq!(loaded, names);
+    assert!(loaded.ends_with(&names), "{loaded:?}");
     // speeds in 1/256 px per tick, from MoveSpeed (second value, scaled and truncated)
-    let speeds: Vec<i32> = a.vehicles.iter().map(|v| v.unit_type.speed(0x8000)).collect();
-    assert_eq!(speeds[..3], [384, 371, 243]);
+    let speeds: Vec<i32> = a.vehicles[loaded.len() - 3..].iter().map(|v| v.unit_type.speed(0x8000)).collect();
+    assert_eq!(speeds, [384, 371, 243]);
+}
+
+#[test]
+fn the_mission_starts_with_its_own_tanks() {
+    let Some(dir) = data_dir() else { return };
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
+    let kinds = a.vehicles.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
+    let start = mission::start(&a.map, &a.unit_classes, &kinds);
+    let tanks = a.map.units.iter().filter(|u| a.unit_classes[&a.map.unit_types[u.kind as usize].to_ascii_lowercase()] == "tank").count();
+    assert_eq!(start.world.units.len(), tanks);
+    assert_eq!(start.skipped.values().sum::<usize>() + tanks, a.map.units.len());
+    // the first unit of the file (a ship gun of player 3) gets id 3 * 1024 + 1 and ends up last
+    let last = start.world.units.last().unwrap();
+    assert_eq!((last.id, last.player, last.cell, last.facing), (UnitId(3 * 1024 + 1), 3, (720 >> 5, 3792 >> 5), 16));
+    assert_eq!(last.crew, 0);
 }
 
 #[test]

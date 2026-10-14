@@ -10,8 +10,11 @@
 
 use crate::{Error, Result};
 
+/// The points of a `.hot` file. An empty file is valid: the tank type loader (`Game_Dll.dll`
+/// `0x10043090`) reads up to `0x300` bytes into a table its constructor zeroed, so missing points
+/// are `(0, 0)` (the Goliath, `bla.hot`, has none).
 pub fn parse(data: &[u8]) -> Result<Vec<(i32, i32)>> {
-    if data.is_empty() || !data.len().is_multiple_of(8) {
+    if !data.len().is_multiple_of(8) {
         return Err(Error::Invalid(format!(".hot file of {} bytes", data.len())));
     }
     Ok(data

@@ -279,3 +279,24 @@ fn every_effect_alpha_frame_decodes_with_its_palette() {
     }
     assert_eq!(frames, 4125);
 }
+
+#[test]
+fn maps_carry_their_units() {
+    let Some(dir) = data_dir() else { return };
+    let m = map::parse(&std::fs::read(dir.join("Maps/single/'Act of Sabotage'.ssm")).unwrap()).unwrap();
+    assert_eq!(m.unit_types.len(), 183);
+    assert_eq!(m.units.len(), 148);
+    let u = &m.units[0];
+    assert_eq!((m.unit_types[u.kind as usize].as_str(), u.player, u.x, u.y, u.heading), ("biggun", 3, 720, 3792, 16));
+    assert_eq!((u.health, u.ammo, u.crew_condition, u.byte0, u.byte4), (100, 100, 0, 90, 100));
+    assert_eq!(m.units[5].crew.len(), 2); // a flak88 with its two gunners
+}
+
+#[test]
+fn every_unit_type_has_a_class() {
+    let Some(dir) = data_dir() else { return };
+    let desc = Archive::parse(std::fs::read(dir.join("desc_common.sue")).unwrap()).unwrap();
+    let classes = openstrike_formats::desc::unit_classes(&String::from_utf8_lossy(&desc.read("units\\UNITS").unwrap().unwrap()));
+    assert!(classes.contains(&("t-26".into(), "tank".into())));
+    assert!(classes.contains(&("flak88".into(), "szenit".into())));
+}

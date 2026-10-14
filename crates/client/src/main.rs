@@ -6,19 +6,18 @@ use std::collections::HashMap;
 
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
 use openstrike_formats::sprite::Image as Sprite;
-use openstrike_sim::grid::{CELL_PX, NO_VEHICLES, QUARTERS};
-use openstrike_sim::{Command, Grid, Rules, SUBPIXEL, TICKS_PER_SECOND, Unit, UnitId, World, step};
+use openstrike_sim::grid::CELL_PX;
+use openstrike_sim::{Command, Grid, Rules, SUBPIXEL, TICKS_PER_SECOND, UnitId, step};
 use raylib::prelude::*;
 
 use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
+use openstrike::mission;
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, terrain};
 
-/// The demo platoon, by description name; vehicles that fail to load are skipped.
-const PLATOON: [&str; 6] = ["t-26", "t-34", "kv-1", "tiger", "panther", "sherman5"];
 /// Quarter of a cell, for the blocked overlay.
 const QUARTER: i32 = CELL_PX / 2;
 const SCREENSHOT_FRAMES: u32 = 200;
@@ -193,23 +192,6 @@ fn read_input(rl: &RaylibHandle) -> CameraInput {
     CameraInput { scroll, drag, zoom_steps: rl.get_mouse_wheel_move(), zoom_anchor: (m.x, m.y) }
 }
 
-/// The platoon starts on free cells around the middle of the map, two cells apart, facing east.
-fn initial_world(grid: &Grid, count: usize) -> World {
-    let (mx, my) = ((grid.width / 2) as i16, (grid.height / 2) as i16);
-    let free = |(x, y): (i16, i16)| grid.at(x as i32, y as i32) & (QUARTERS | NO_VEHICLES) == 0;
-    let cells: Vec<(i16, i16)> = (0..32i16)
-        .flat_map(|r| (-r..=r).flat_map(move |dy| (-r..=r).map(move |dx| (mx + 2 * dx, my + 2 * dy))))
-        .filter(|&c| free(c))
-        .fold(Vec::new(), |mut acc, c| {
-            if !acc.contains(&c) {
-                acc.push(c);
-            }
-            acc
-        });
-    let units = cells.into_iter().take(count).enumerate().map(|(i, cell)| Unit::new(UnitId(i as u32 + 1), i, cell, 0)).collect();
-    World::new(units, 0)
-}
-
 /// Cell under a map pixel.
 fn cell_at(x: i32, y: i32) -> (i16, i16) {
     (x.div_euclid(CELL_PX) as i16, y.div_euclid(CELL_PX) as i16)
@@ -234,10 +216,7 @@ fn main() {
 }
 
 fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
-    let assets = assets::load(&opts.data, &opts.map, opts.climate.as_deref(), &PLATOON)?;
-    if assets.vehicles.is_empty() {
-        return Err("no vehicle could be loaded".into());
-    }
+    let assets = assets::load(&opts.data, &opts.map, opts.climate.as_deref(), &[])?;
     let proj = assets.projection;
     let (screen_w, screen_h) = proj.screen_size();
     let objects = scene::objects(&assets.map, &proj, &assets.object_sets);
@@ -276,18 +255,21 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
 
-    let mut world = initial_world(&rules.grid, assets.vehicles.len());
-    let first = world.units[0].position();
-    let (lx, ly) = opts.look_at.unwrap_or((first.0 / SUBPIXEL, first.1 / SUBPIXEL));
+    let kinds = assets.vehicles.iter().enumerate().map(|(i, v)| (v.name.to_ascii_lowercase(), i)).collect();
+    let start = mission::start(&assets.map, &assets.unit_classes, &kinds);
+    if !start.skipped.is_empty() {
+        eprintln!("openstrike: units of classes not simulated yet, left out: {:?}", start.skipped);
+    }
+    let mut world = start.world;
+    // until the map's start view is read: the first unit of player 0, else the middle of the map
+    let first = world.units.iter().rev().find(|u| u.player == 0).map(|u| u.position());
+    let (mx, my) = first.map_or(((proj.width * 16) as i32, (proj.height * 16) as i32), |p| (p.0 / SUBPIXEL, p.1 / SUBPIXEL));
+    let (lx, ly) = opts.look_at.unwrap_or((mx, my));
     let (tx, ty) = proj.to_screen(lx, ly);
     let mut cam = Camera { x: tx as f32 - 640.0 / opts.zoom, y: ty as f32 - 400.0 / opts.zoom, zoom: opts.zoom };
     let mut selected: Vec<UnitId> = Vec::new();
     let mut press: Option<(f32, f32)> = None;
     let mut pending: Vec<Command> = Vec::new();
-    if opts.screenshot.is_some() {
-        selected = world.units.iter().map(|u| u.id).collect();
-        pending.push(Command::Move { units: selected.clone(), to: cell_at(first.0 / SUBPIXEL - 165, first.1 / SUBPIXEL + 325) });
-    }
     // Each frame, as the game composes the screen (`Game_Dll.dll` `0x100706d0`-`0x100707f9`): the
     // map (ground, layers 0-5, map shadows, upright objects with their depths), then the units in
     // three passes over all of them by depth: tracks, shadows, hull and turret.

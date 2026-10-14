@@ -1,7 +1,7 @@
 //! Single-player maps (`.ssm`, gzip, magic `SSSM`, version `0x10f`).
 //!
-//! Layout from the editor's map writer, `QED.EXE` `0x415fa0`. Only the sections up to the object
-//! list are parsed; see `docs/formats.md` for the rest.
+//! Layout from the editor's map writer, `QED.EXE` `0x415fa0`. The sections up to the units are
+//! parsed; see `docs/formats.md` for the rest.
 
 use std::io::Read;
 
@@ -28,6 +28,32 @@ pub struct Object {
     pub extra: [u8; 2],
 }
 
+/// A unit placed on the map (`QED.EXE` `0x4153e0` writes it, `Game_Dll.dll` `0x1003fe70` reads
+/// it from `XCHNG\TOGAME\mis_mapunits`): 13 bytes, then `crew` records of 6 bytes.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapUnit {
+    /// Index into [`Map::unit_types`] (byte 5).
+    pub kind: u8,
+    /// Owner (byte 12): the unit's id is taken from `player * 1024 + 1` on (`0x1003e370`).
+    pub player: u8,
+    /// Map pixels (bytes 7-10); a vehicle is moved to its cell's `(15, 15)` (`0x10040190`).
+    pub x: i16,
+    pub y: i16,
+    /// Hull and turret heading, `& 31` (byte 11, `0x1002ce06`).
+    pub heading: u8,
+    /// Percentages of the type's hit points, ammunition (both kinds) and crew condition
+    /// (bytes 1, 2, 3; `0x10040030`).
+    pub health: u8,
+    pub ammo: u8,
+    pub crew_condition: u8,
+    /// Byte 0, kept in `+0x5a` and passed with the player to `0x100681a0` (meaning not read).
+    pub byte0: u8,
+    /// Byte 4, kept in `+0x3f` (meaning not read).
+    pub byte4: u8,
+    /// Byte 6 records of 6 bytes (`+0x254` of the unit, crews of guns and the like; not read).
+    pub crew: Vec<[u8; 6]>,
+}
+
 #[derive(Debug, Clone)]
 pub struct Map {
     pub version: u32,
@@ -46,6 +72,9 @@ pub struct Map {
     pub layer2: Vec<u32>,
     pub object_sets: Vec<String>,
     pub objects: Vec<Object>,
+    /// Unit type names (`QED.EXE` `0x415140`, `XCHNG\TOGAME\mis_unitnames`): 16 bytes each.
+    pub unit_types: Vec<String>,
+    pub units: Vec<MapUnit>,
 }
 
 impl Map {
@@ -138,5 +167,40 @@ pub fn parse_raw(data: &[u8]) -> Result<Map> {
             Ok(Object { x: r.i16()?, y: r.i16()?, set: r.u8()?, frame: r.u8()?, extra: [r.u8()?, r.u8()?] })
         })
         .collect::<Result<_>>()?;
-    Ok(Map { version, header, width, height, briefing, preview_size, preview, ground, layer2, object_sets, objects })
+    let n_types = r.u32()? as usize;
+    if n_types > 256 {
+        return Err(Error::Invalid(format!("{n_types} unit types")));
+    }
+    let unit_types: Vec<String> = (0..n_types).map(|_| r.bytes(16).map(latin1)).collect::<Result<_>>()?;
+    r.bytes(100 * 27)?; // QED.EXE 0x4151b0, not read yet
+    // u32 size of what follows (the count and the records), u32 count, records
+    let size = r.u32()? as usize;
+    let start = r.pos();
+    let count = r.u32()? as usize;
+    let mut units = Vec::with_capacity(count);
+    for _ in 0..count {
+        let b = r.bytes(13)?;
+        let crew = (0..b[6]).map(|_| r.bytes(6).map(|c| <[u8; 6]>::try_from(c).unwrap())).collect::<Result<_>>()?;
+        let unit = MapUnit {
+            byte0: b[0],
+            health: b[1],
+            ammo: b[2],
+            crew_condition: b[3],
+            byte4: b[4],
+            kind: b[5],
+            x: i16::from_le_bytes([b[7], b[8]]),
+            y: i16::from_le_bytes([b[9], b[10]]),
+            heading: b[11],
+            player: b[12],
+            crew,
+        };
+        if unit.kind as usize >= unit_types.len() {
+            return Err(Error::Invalid(format!("unit type {} of {}", unit.kind, unit_types.len())));
+        }
+        units.push(unit);
+    }
+    if r.pos() - start != size {
+        return Err(Error::Invalid(format!("unit section of {} bytes, {size} declared", r.pos() - start)));
+    }
+    Ok(Map { version, header, width, height, briefing, preview_size, preview, ground, layer2, object_sets, objects, unit_types, units })
 }

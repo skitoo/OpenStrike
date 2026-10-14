@@ -1,5 +1,6 @@
 //! Loading game data into plain values, before anything touches the GPU.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use openstrike_formats::ini::Ini;
@@ -11,6 +12,8 @@ use openstrike_formats::palette::Palette;
 use openstrike_formats::sprite::{self, Image, KIND_SHADOW};
 use openstrike_formats::sue::{Archive, Vfs};
 use openstrike_sim::UnitType;
+
+use crate::mission;
 
 pub type Error = Box<dyn std::error::Error>;
 
@@ -42,8 +45,11 @@ pub struct Assets {
     pub rhomb_palettes: Vec<Palette>,
     /// One per entry of `map.object_sets`; empty when the set could not be loaded.
     pub object_sets: Vec<ObjectSet>,
-    /// The vehicles that could be loaded, in the order asked.
+    /// The `tank` class types the map's units use (in the order of [`Map::unit_types`]), then
+    /// the extra ones asked for; those that could not be loaded are left out.
     pub vehicles: Vec<Vehicle>,
+    /// Class of each unit type (lowercase names, `desc_common/units/UNITS`).
+    pub unit_classes: HashMap<String, String>,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -137,7 +143,7 @@ pub fn vehicle_sprites(vfs: &Vfs, name: &str) -> Result<VehicleSprites, Error> {
         strip.iter().map(|f| Ok(sprite::decode(f, &palette)?)).collect()
     };
     let mut mounts = hot::parse(&vfs.require(&format!("{name}.hot"))?)?;
-    mounts.truncate(32);
+    mounts.resize(32, (0, 0));
     Ok(VehicleSprites {
         hull: decode(0)?,
         tracks: decode(128)?,
@@ -160,16 +166,40 @@ fn object_set(vfs: &Vfs, name: &str) -> Result<ObjectSet, Error> {
 }
 
 /// Load a map and what it needs. `climate` overrides the map's own (see `Map::climate`).
-pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, vehicles: &[&str]) -> Result<Assets, Error> {
+pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehicles: &[&str]) -> Result<Assets, Error> {
     let map = map::parse(&std::fs::read(map_path)?)?;
     let vfs = mount(data_dir, climate.unwrap_or(map.climate()))?;
     let object_sets = map.object_sets.iter().map(|n| object_set(&vfs, n)).collect::<Result<_, _>>()?;
+    let unit_classes: HashMap<String, String> = desc::unit_classes(&String::from_utf8_lossy(&vfs.require("units\\UNITS")?)).into_iter().collect();
+    let mut names: Vec<String> = Vec::new();
+    for u in &map.units {
+        let name = map.unit_types[u.kind as usize].to_ascii_lowercase();
+        if unit_classes.get(&name).is_some_and(|c| c == mission::TANK) && !names.contains(&name) {
+            names.push(name);
+        }
+    }
+    for n in extra_vehicles {
+        if !names.iter().any(|m| m.eq_ignore_ascii_case(n)) {
+            names.push(n.to_ascii_lowercase());
+        }
+    }
+    let vehicles = names
+        .iter()
+        .filter_map(|n| match vehicle(&vfs, n) {
+            Ok(v) => Some(v),
+            Err(e) => {
+                eprintln!("openstrike: vehicle {n} not loaded: {e}");
+                None
+            }
+        })
+        .collect();
     Ok(Assets {
         projection: Projection::of(&map),
         rhombs: vfs.require("mappic.rs2")?,
         rhomb_palettes: Palette::parse_many(&vfs.require("rhomb.pl")?)?,
         object_sets,
-        vehicles: vehicles.iter().filter_map(|n| vehicle(&vfs, n).ok()).collect(),
+        vehicles,
+        unit_classes,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,
     })

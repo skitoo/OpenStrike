@@ -24,3 +24,13 @@ fn the_sprite_frame_is_the_map_heading() {
     assert_eq!(openstrike::scene::frame_for(17), 17);
     assert_eq!(openstrike::scene::frame_for(31), 31);
 }
+
+#[test]
+fn map_percentages_become_crew_conditions_as_the_game_divides() {
+    use openstrike::mission::crew_condition;
+    assert_eq!(crew_condition(0), 0);
+    assert_eq!(crew_condition(100), 0x8000);
+    assert_eq!(crew_condition(50), 0x4000);
+    assert_eq!(crew_condition(33), 10813); // 33 * 32768 / 100, truncated
+    assert_eq!(crew_condition(200), 0x8000);
+}

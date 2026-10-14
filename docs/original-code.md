@@ -225,6 +225,12 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
+| `0x1003fe70` | mission units: reads `XCHNG\TOGAME\mis_unitnames` (16-byte names) and `mis_mapunits`; per record `0x1003e370(name, player)` creates the unit (first free id from `player * 1024 + 1`, table `0x100b7504`, prepended to the unit list `[0x100c4508]`), then its vtable `+0x24c` applies the record (tank `0x10040190`: cell middle, then `0x10040030` builds the init block for `+0x19c`) and `+0x254` each 6-byte crew record |
+| `0x10040030` | init block from a map record: byte0, byte4, HP = max(1, health% * type `+0xb8` / 100), crew condition = min(0x8000, (crew% << 15) / 100), ammo = ammo% * type `+0xbc` / `+0xc0` / 100, x, y, heading |
+| `0x10033990` | base unit init: cell and offset from x, y, `+0x37` HP, `+0x39`/`+0x3b` ammo, `+0x3d` crew condition, `+0x3f` byte4, `+0x5a` byte0, 5 random bytes into `+0x46..` (draws the generator) |
+| `0x100171e0` | vehicle init: also draws the generator (`+0xc0` timer); `0x1002dd30` sets `+0xb3` (immobilised) when HP < `MoveDamageHP` |
+| `0x1004b54e` area | type factory: class names `tank`, `tank2`, `samo`, `atg`, `gaub`, `szenit`, `mzenit`, `apc`, `jeep`, `gruz`, `furg`, `medic`, `guner`, `art`, `para`, `crate`, `house`, `machine`, `katya` (strings `0x100b1384`-`0x100b14c0`), from `desc_common/units/UNITS` |
+| `0x10043090` | tank type: reads up to `0x300` bytes of `<file>.hot` into `+0x1126` (zeroed by the constructor, so an empty file gives (0, 0) points) |
 | `0x10058c20`, `0x10058d20` | mount the archives of `DataPathScm0_<i>` and `DataPathScm<climate + 1>_<i>` (`[0x10298d28]` = climate), `i` up to the first empty key; `0x10093590` splits on `;`; `0x10093090` files each entry in the 4096-slot table `0x103895e8` (32-byte entries), keeping the first one for a name unless the archive had the `^` prefix |
 | `cad800.dll` `0x100044f5` | sprite RLE blitter (`0xa2` format); `0x10001c13` colour key `0xF81F` |
 | `cad800.dll` `0x10008edd` | sprite dispatcher by kind: `0xa1` `0x10008f4c`, `0xa2` `0x100095a6`, `0xa3` `0x100098db`, `0xa9` `0x10009228` |

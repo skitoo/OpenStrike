@@ -159,6 +159,10 @@ Three gzip-compressed formats: `SSSM` single-player maps (`.ssm`, version `0x10f
 
 Layout from the map **writer** in the editor, `QED.EXE` `0x415fa0`, which writes 13 sections in order.
 Parser: `tools/ssm_probe.py`, validated up to the end of the object list on all 164 single-player maps.
+`crates/formats/src/map.rs` parses up to the units, checked on all 164 maps (the declared size always matches).
+The class of each type comes from `desc_common/units/UNITS` (`class name` lines: `tank t-26`, `szenit flak88`...),
+which the type factory (around `Game_Dll.dll` `0x1004b54e`) uses to build the type object. OpenStrike creates the
+`tank` class units (3466 on the 164 maps) and leaves the other classes out until they are written.
 
 ```
 "SSSM", u32 version (0x10f), 16-byte GUID
@@ -171,8 +175,16 @@ ground:    width x height u16 = palette_select << 11 | rhomb index             0
              bred fre lay stand tree trop dom zabor cliff vor most             0x414210
            u32 n, n x 8-byte objects: i16 x, i16 y (map pixels, 32 per cell),
              u8 set (index into the names above), u8 frame, u8 ?, u8 ?
-then (not parsed yet): u32 n + n x 16 bytes (0x415140); 100 x 27-byte records (0x4151b0);
-units, size-prefixed (0x4152f0); 3-4 player/side records of 0x161 bytes (0x415b10);
+unit type names: u32 n, n x 16-byte names (0x415140; the game reads them as XCHNG\TOGAME\mis_unitnames)
+100 x 27-byte records (0x4151b0, not read yet)
+units (0x4152f0; XCHNG\TOGAME\mis_mapunits, read by Game_Dll.dll 0x1003fe70):
+  u32 size (of the count and the records), u32 count, then per unit 13 bytes + crew x 6 bytes:
+    u8 byte0 (unit +0x5a, passed with the player to 0x100681a0), u8 health %, u8 ammo % (both kinds),
+    u8 crew condition % (-> (p << 15) / 100, unit +0x3d), u8 byte4 (unit +0x3f), u8 type (index into the
+    names), u8 crew count, i16 x, i16 y (map pixels; a vehicle goes to its cell's (15, 15), 0x10040190),
+    u8 heading (& 31, hull and turret, 0x1002ce06), u8 player (id from player * 1024 + 1, 0x1003e370)
+  editors only write units at least 4 cells from the edge
+then (not parsed yet): 3-4 player/side records of 0x161 bytes (0x415b10);
 0x4e-byte records + a byte grid (0x4155d0); compressed blobs (`VOVA_Comp`, 0x4156b0);
 a byte grid (0x415740); two size-prefixed blocks (0x415a70, 0x415cb0); 2x i16 pairs (0x415d50)
 ```
