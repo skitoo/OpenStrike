@@ -155,3 +155,14 @@ fn the_orders_grid_lies_on_the_panel() {
     assert_eq!((b.width, b.height), (25, 28));
     assert_eq!((a.buttons[&29].width, a.buttons[&32].width), (40, 32));
 }
+
+#[test]
+fn the_information_bar_has_its_texts_and_font() {
+    let Some(dir) = data_dir() else { return };
+    let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
+    assert_eq!((a.info_bar.width, a.info_bar.height), (368, 32));
+    assert_eq!(a.texts[11], "AVANCER (~key_00~)");
+    assert_eq!(a.key_names["00"], "A");
+    assert_eq!(a.key_names["hm"], "R");
+    assert!(a.font[b'A' as usize].as_ref().is_some_and(|g| g.width > 0));
+}

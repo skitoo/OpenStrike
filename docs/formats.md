@@ -243,6 +243,15 @@ keeping them armed. A button that disappears from the grid disarms its order.
 `common/intrtext.dat`: u32 offsets (the first one / 4 is their count), then NUL-terminated texts (cp1252),
 `~key_xx~` standing for the key's name: the tooltips and messages of the interface.
 
+The information bar (`0x10077af0`, window `NWTT`): `intrpic.dat` frame 5 (368 x 32) at the bottom of the screen
+with its right edge at x 639, filling the notch of the panel picture (transparent from (272, 104)); its layout is
+frame 4 (record 1 the text label, (9, 8)-(336, 18); record 2 the text's start, (11, 16)). Each frame the window
+under the mouse is asked what it shows (`0x1006d2a4`, window vtable `+0x40`, `0x10075480`: a button's tooltip
+string `[0x1029958c + 4 * tip]`, type 2), and the bar takes the text (`0x10077c30`), keeps it 200 ms after the last
+time, then goes back to its default text; `~key_xx~` becomes the key's name in `key.map` (`0x10077d90`). Text
+(`0x1005b100`): left-aligned, each character the glyph of its code in frame 11 (palette `intr.pl`), advancing by
+the glyph's width + 2.
+
 ## Interface colours `user.pl`
 
 256 RGB565 colours per climate, loaded by `Game_Dll.dll` `0x10082240` into `0x10387cb0`. Entry 96 is used by

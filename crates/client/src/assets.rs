@@ -4,7 +4,7 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use openstrike_formats::ini::Ini;
-use openstrike_formats::{curves, desc, hot};
+use openstrike_formats::{curves, desc, hot, interface};
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
 use openstrike_formats::objects::{self, ObjectSet};
@@ -67,6 +67,14 @@ pub struct Assets {
     pub layout: Vec<[i32; 4]>,
     /// The pictures of the panel's buttons, `intrpic.dat` frames 29-86 by frame.
     pub buttons: HashMap<usize, Image>,
+    /// The information bar (`intrpic.dat` frame 5, the `NWTT` window of `0x10077af0`).
+    pub info_bar: Image,
+    /// The interface font (`intrpic.dat` frame 11, palette `intr.pl`), a glyph per character code.
+    pub font: Vec<Option<Image>>,
+    /// `intrtext.dat`.
+    pub texts: Vec<String>,
+    /// The key names of `key.map` by action, lowercase (`00` -> `A`).
+    pub key_names: HashMap<String, String>,
     /// `CURVENEW` points per `next * 9 + previous`.
     pub curves: Vec<Vec<(i16, i16)>>,
 }
@@ -130,6 +138,25 @@ fn interface_frame(vfs: &Vfs, index: usize) -> Result<Image, Error> {
     let frames = sprite::pck_frames(&data)?;
     let frame = frames.get(index).ok_or("intrpic.dat: frame out of range")?;
     Ok(sprite::decode(frame, &palette)?)
+}
+
+/// See [`Assets::font`]: glyphs that do not decode are left out.
+fn font(vfs: &Vfs) -> Result<Vec<Option<Image>>, Error> {
+    let data = vfs.require("intrpic.dat")?;
+    let palette = Palette::parse(&vfs.require("intr.pl")?)?;
+    let frames = sprite::pck_frames(&data)?;
+    let font = frames.get(11).ok_or("intrpic.dat: no frame 11")?;
+    Ok((0..=255u8).map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok())).collect())
+}
+
+/// See [`Assets::key_names`]: the game reads `key.map` from the install's root.
+fn key_names(data_dir: &Path, vfs: &Vfs) -> Result<HashMap<String, String>, Error> {
+    let data = match find_file(data_dir, "key.map") {
+        Ok(path) => std::fs::read(path)?,
+        Err(_) => vfs.require("key.map")?,
+    };
+    let names = interface::key_names(&String::from_utf8_lossy(&data));
+    Ok(names.into_iter().map(|(k, v)| (k.to_ascii_lowercase(), v)).collect())
 }
 
 /// See [`Assets::layout`].
@@ -258,6 +285,10 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         user_colours: Palette::parse(&vfs.require("user.pl")?)?,
         group_digits: group_digits(&vfs)?,
         layout: layout(&vfs)?,
+        info_bar: interface_frame(&vfs, 5)?,
+        font: font(&vfs)?,
+        texts: interface::texts(&vfs.require("intrtext.dat")?)?,
+        key_names: key_names(data_dir, &vfs)?,
         buttons: (29..=86).map(|i| Ok((i, interface_frame(&vfs, i)?))).collect::<Result<_, Error>>()?,
         curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
         map,

@@ -14,7 +14,7 @@ use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
-use openstrike::{minimap, mission, orders};
+use openstrike::{info, minimap, mission, orders};
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, status, terrain};
 
@@ -285,6 +285,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     }
     let mut ground: HashMap<(i32, i32), Texture2D> = HashMap::new();
     let panel = upload_sprite(&mut rl, &thread, &assets.panel);
+    let info_bar = upload_sprite(&mut rl, &thread, &assets.info_bar);
+    let font: Vec<Option<SpriteTexture>> = assets.font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
     let buttons: HashMap<usize, SpriteTexture> = assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
     let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
     let minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &minimap::render(&assets.map));
@@ -304,6 +306,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let mut groups = selection::Groups::new();
     // the order waiting for a target (`[0x103880bc]`)
     let mut armed: Option<u8> = None;
+    // the information bar's text and when it was last given
+    let mut info_text: Option<(String, f64)> = None;
     // the last group key pressed and when, for the second press that centres the view
     let mut last_recall: Option<(u8, f64)> = None;
     let mut press: Option<(f32, f32)> = None;
@@ -332,9 +336,13 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         // the interface panel, bottom left, scaled by a whole factor (the original screen is 800 x 600)
         let ui_scale = ((screen.0 / 800.0).min(screen.1 / 600.0).floor() as i32).max(1);
         let panel_origin = (0, screen.1 as i32 - minimap::PANEL_SIZE.1 * ui_scale);
+        // the information bar, in panel pixels
+        let bar_origin = (info::BAR_RIGHT + 1 - assets.info_bar.width as i32, minimap::PANEL_SIZE.1 - assets.info_bar.height as i32);
         let on_panel = |x: f32, y: f32| {
             let (px, py) = ((x as i32 - panel_origin.0) / ui_scale, (y as i32 - panel_origin.1) / ui_scale);
-            (px >= 0 && py >= 0 && px < minimap::PANEL_SIZE.0 && py < minimap::PANEL_SIZE.1).then_some((px, py))
+            // the panel, or the information bar in its notch
+            let bar = px >= bar_origin.0 && px <= info::BAR_RIGHT && py >= bar_origin.1;
+            (py >= 0 && py < minimap::PANEL_SIZE.1 && px >= 0 && (px < minimap::PANEL_SIZE.0 || bar)).then_some((px, py))
         };
         let mouse_on_panel = on_panel(mouse.x, mouse.y);
         if let Some((px, py)) = mouse_on_panel
@@ -360,6 +368,17 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             orders::hold_state(selected_units().map(|u| u.hold_fire)),
         ];
         let in_record = |r: [i32; 4], (x, y): (i32, i32)| x >= r[0] && x <= r[2] && y >= r[1] && y <= r[3];
+        if let Some(p) = mouse_on_panel {
+            let grid_text = grid.iter().enumerate().find_map(|(place, b)| {
+                b.filter(|_| in_record(assets.layout[orders::GRID_RECORD + place], p)).map(|b| b.text)
+            });
+            let hold_text = (0..2).find_map(|k| {
+                (capabilities & (1 << k) != 0 && in_record(assets.layout[orders::HOLD_RECORDS[k]], p)).then_some(info::HOLD_TEXTS[k])
+            });
+            if let Some(t) = grid_text.or(hold_text).and_then(|t| assets.texts.get(t)) {
+                info_text = Some((info::expand(t, &assets.key_names), rl.get_time()));
+            }
+        }
         let clicked = |r: usize| {
             rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_some_and(|p| in_record(assets.layout[r], p))
         };
@@ -640,6 +659,19 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             for (k, state) in hold_states.into_iter().enumerate() {
                 if capabilities & (1 << k) != 0 {
                     draw_button(orders::HOLD_FRAMES[k] + state, orders::HOLD_RECORDS[k]);
+                }
+            }
+            d.draw_texture_ex(&info_bar.texture, at(bar_origin.0, bar_origin.1), 0.0, s, Color::WHITE);
+            let now = d.get_time();
+            if let Some((text, given)) = &info_text
+                && now - given < info::HOLD_SECONDS
+            {
+                let width = |c: u8| font[c as usize].as_ref().map_or(0, |g| g.size.0);
+                for (x, c) in info::layout(text, width) {
+                    if let Some(g) = &font[c as usize] {
+                        let (gx, gy) = (bar_origin.0 + info::TEXT_AT.0 + x + g.anchor.0, bar_origin.1 + info::TEXT_AT.1 + g.anchor.1);
+                        d.draw_texture_ex(&g.texture, at(gx, gy), 0.0, s, Color::WHITE);
+                    }
                 }
             }
             // the view in the game's screen coordinates (no offset: map pixel (0, 0) at x 0)
