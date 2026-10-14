@@ -494,6 +494,15 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 let p = at(x, y);
                 d.draw_rectangle(p.x as i32, p.y as i32, ui_scale, ui_scale, Color::new(r, g, b, 255));
             }
+            // in the order of the game's unit list, so the last one wins a shared pixel
+            for u in &world.units {
+                let (x, y) = u.position();
+                let Some(&[r, g, b]) = assets.user_colours.colours.get(minimap::PLAYER_COLOURS + u.player as usize) else { continue };
+                for (px, py) in minimap::dot(&assets.map, x >> 8, y >> 8) {
+                    let p = at(px, py);
+                    d.draw_rectangle(p.x as i32, p.y as i32, ui_scale, ui_scale, Color::new(r, g, b, 255));
+                }
+            }
         }
         d.draw_text(
             "Left click / drag: select (Shift adds)   Right click: move   Arrows/WASD, middle drag: scroll   Wheel: zoom   B: blocked",

@@ -1,4 +1,4 @@
-use openstrike::minimap::{cell, frame, origin_y, render, target, HEIGHT, ORIGIN_X, WIDTH};
+use openstrike::minimap::{cell, dot, frame, origin_y, render, target, HEIGHT, ORIGIN_X, WIDTH};
 use openstrike_formats::map::Map;
 
 fn map(size: u32) -> Map {
@@ -79,4 +79,22 @@ fn the_frame_is_only_drawn_on_the_widget() {
     assert!(pixels.contains(&(ORIGIN_X, oy + 4)));
     assert!(pixels.contains(&(ORIGIN_X + 1, oy + 4)));
     assert!(!pixels.contains(&(ORIGIN_X - 2, oy + 4))); // cell (3, 5)
+}
+
+#[test]
+fn units_are_dots_at_their_cell() {
+    let m = map(128);
+    let oy = origin_y(&m);
+    let square = |x: i32, y: i32| vec![(x, y), (x + 1, y), (x, y + 1), (x + 1, y + 1)];
+    // cell (10, 6): from pixel (10 - 6, (10 + 6) >> 1), anywhere in the cell
+    assert_eq!(dot(&m, 10 * 32, 6 * 32), square(ORIGIN_X + 4, oy + 8));
+    assert_eq!(dot(&m, 10 * 32 + 31, 6 * 32 + 31), square(ORIGIN_X + 4, oy + 8));
+    // odd sums round down: cell (11, 6) is at (5, 8)
+    assert_eq!(dot(&m, 11 * 32, 6 * 32)[0], (ORIGIN_X + 5, oy + 8));
+    // not on the widget near the edge, cut by the rhomb's border
+    assert!(dot(&m, 0, 60 * 32).is_empty());
+    assert_eq!(dot(&m, 4 * 32, 4 * 32), vec![(ORIGIN_X, oy + 4), (ORIGIN_X + 1, oy + 4), (ORIGIN_X, oy + 5), (ORIGIN_X + 1, oy + 5)]);
+    // halved maps: two cells per pixel
+    let big = map(256);
+    assert_eq!(dot(&big, 21 * 32, 13 * 32)[0], (ORIGIN_X + 4, origin_y(&big) + 8));
 }

@@ -229,7 +229,7 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | `0x10072fc3` | interface: `intrpic.dat` (`[0x10382fc0]`), `icon.rs2` (`[0x10382b88]`), `intr.pl` |
 | `0x1006f540` | the `PANL` window: rect from `intrpic.dat` frame 1 at the bottom left (`[0x10353ee4]` = screen height), minimap widget `0x10357008` |
 | `0x1006e5c0`, `0x1006eef0`, `0x1006f3f2` | minimap: origin and scale (`+0x11`, `+0x15`, `+0x25`), drawing from `0x101f64e6` (preview, read by `0x1004c8b0` from `map_mini`), click to move the view |
-| `0x1006eb30` | minimap widget draw (vtable `0x100abfd0` entry 5): fill (`0x1006eef0`, halved `0x1006f0a0`), view frame (`0x1006ee80`, colour `[0x10387d72]`), then each unit's vtable `+0x244` at its minimap pixel |
+| `0x1006eb30` | minimap widget draw (vtable `0x100abfd0` entry 5): fill (`0x1006eef0`, halved `0x1006f0a0`), view frame (`0x1006ee80`, colour `[0x10387d72]`), then each unit's vtable `+0x244` at its minimap pixel (tank `0x1000f690`: one pixel, `0x1006e470`, colour `[0x10387d30 + 2 * player]` = `user.pl` 64 + player, if `+0x74` `0x100333d0`: alive and seen) |
 | `0x1006e640` | minimap widget init: marks its pixels with id 1 in the window's ownership map `+0x4c`; `0x1006e4c0` / `0x1006e540` draw lines only on them |
 | `0x10071e40` view globals | `[0x10382904]`, `[0x10382900]` view top left in screen coordinates, `[0x103828fc]`, `[0x103828f8]` screen size (driver `+0x18`, `+0x1c`) |
 | `0x10071e40` | initial view: middle of the map; `0x10072000` moves it to an absolute point |

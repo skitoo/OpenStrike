@@ -17,6 +17,11 @@ pub const ORIGIN_X: i32 = 132;
 /// Entry of `user.pl` the view frame is drawn in (`[0x10387d72]`, the palette being loaded at
 /// `0x10387cb0` by `0x10082240`): white, green in winter.
 pub const FRAME_COLOUR: usize = 97;
+/// Entry of `user.pl` of player 0's units; player `p` uses the next `p`-th (`0x1000f690`, the
+/// tank's vtable `+0x244`, reads `[0x10387d30 + 2 * player]`).
+pub const PLAYER_COLOURS: usize = 64;
+/// Side of a unit's dot in minimap pixels (1 in the game, see [`dot`]).
+pub const DOT_SIZE: i32 = 2;
 /// Size of the minimap image, covering `px` in `-ORIGIN_X..WIDTH - ORIGIN_X`.
 pub const WIDTH: i32 = 264;
 pub const HEIGHT: i32 = 136;
@@ -105,4 +110,22 @@ pub fn frame(map: &Map, view: (i32, i32), size: (i32, i32)) -> Vec<(i32, i32)> {
     let columns = [x0, x0 + w - 1].into_iter().flat_map(|x| (y0..y0 + h).map(move |y| (x, y)));
     let oy = origin_y(map);
     rows.chain(columns).filter(|&(x, y)| owned(map, x, y)).map(|(x, y)| (x + ORIGIN_X, y + oy)).collect()
+}
+
+/// Panel pixels of the dot of a unit at map pixel `(x, y)`. After the frame, the game walks the
+/// unit list (`0x1006ed84`) and calls each unit's vtable `+0x244` with the minimap pixel of its map
+/// pixel shifted right by 5 (6 for halved maps); a tank (`0x1000f690`) puts one pixel there
+/// (`0x1006e470`) when it is alive and seen by the local player (`0x100333d0`). **Accepted
+/// difference**: OpenStrike draws [`DOT_SIZE`] pixels square from there, the single pixel being
+/// too small to see on today's screens; each still only where the widget owns it.
+pub fn dot(map: &Map, x: i32, y: i32) -> Vec<(i32, i32)> {
+    let s = 5 + halved(map) as u32;
+    let (x, y) = (x >> s, y >> s);
+    let (px, py) = (x - y, (x + y) >> 1);
+    let oy = origin_y(map);
+    (0..DOT_SIZE)
+        .flat_map(|dy| (0..DOT_SIZE).map(move |dx| (px + dx, py + dy)))
+        .filter(|&(x, y)| owned(map, x, y))
+        .map(|(x, y)| (x + ORIGIN_X, y + oy))
+        .collect()
 }

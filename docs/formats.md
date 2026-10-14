@@ -174,10 +174,17 @@ in the winter `user.pl`). Those lines only write the pixels the widget owns in t
 (`+0x4c`, one byte per pixel holding a widget id; the minimap's is 1, `0x1006e450`): its init (`0x1006e640`)
 marks pixel `(x - y, (x + y) >> 1)` of each preview cell `4 <= x < (w - 4) >> halved` (same for y).
 
+Last the units (`0x1006ed84`): in the order of the unit list, each unit's vtable `+0x244` gets the pixel of its
+map pixel shifted right by 5 (6), `(x - y, (x + y) >> 1)` from the widget's origin. A tank (`0x1000f690`) writes
+that one pixel, on the widget's pixels only (`0x1006e470`), in `user.pl` colour `64 + player`, unless it is dead
+(bit 0 of `+0x1a`) or not seen by the local player (`0x100333d0`). **Accepted difference**: OpenStrike draws a 2 x 2 square
+from that pixel (still on the widget's pixels only), one pixel being too small to see on today's screens.
+
 ## Interface colours `user.pl`
 
 256 RGB565 colours per climate, loaded by `Game_Dll.dll` `0x10082240` into `0x10387cb0`. Entry 96 is used by
-`0x10070499` (likely the selection rectangle), 97 by the minimap's view frame; `0x10387d2c` (entry 62 onwards) is
+`0x10070499` (likely the selection rectangle), 97 by the minimap's view frame, 64-73 by the units on the minimap
+(`64 + player`); `0x10387d2c` (entry 62 onwards) is
 passed as a palette to the text drawing.
 
 ## Maps
