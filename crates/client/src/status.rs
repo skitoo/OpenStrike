@@ -15,10 +15,11 @@ pub const DAMAGED: usize = 3;
 pub const WRECKED: usize = 4;
 /// Ammunition bars.
 pub const AMMO: usize = 5;
-/// Hit points of an enemy and an ally; the second is also the crew bar.
-pub const ENEMY: usize = 6;
-pub const ALLY: usize = 7;
-/// The crew's own condition, over the crew bar (which veterans extend).
+/// Hit points of another player's units: not hostile to the local player, hostile.
+pub const OTHER: usize = 6;
+pub const HOSTILE: usize = 7;
+/// The crew bar (which veterans extend), then the crew's own condition over it.
+pub const CREW_BAR: usize = 7;
 pub const CREW: usize = 8;
 
 /// Lengths at or above this hide a bar; 0xff hides them all.
@@ -28,8 +29,9 @@ const NONE: i32 = 0xff;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Owner {
     Local,
-    Ally,
-    Enemy,
+    /// A player hostile to the local one (`[0x101ff390 + 2 * local]`, see `mission::hostile`).
+    Hostile,
+    Other,
 }
 
 /// What the bars show of a unit.
@@ -81,8 +83,8 @@ pub fn bars(at: (i32, i32), half: i32, s: &Status) -> Vec<Line> {
         _ => NONE,
     });
     let hp_colour = match s.owner {
-        Owner::Ally => ALLY,
-        Owner::Enemy => ENEMY,
+        Owner::Hostile => HOSTILE,
+        Owner::Other => OTHER,
         Owner::Local if s.hp < s.max_hp >> 2 => WRECKED,
         Owner::Local if s.hp < s.damaged_below => DAMAGED,
         Owner::Local => HEALTHY,
@@ -108,7 +110,7 @@ pub fn bars(at: (i32, i32), half: i32, s: &Status) -> Vec<Line> {
         }
     }
     if crew < HIDDEN {
-        bar(&mut out, y, crew, ALLY);
+        bar(&mut out, y, crew, CREW_BAR);
         let own = (width * s.crew) >> 15;
         if own != 0 {
             out.push(Line { x: x0, y, len: own, colour: CREW });

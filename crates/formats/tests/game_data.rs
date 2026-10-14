@@ -290,6 +290,8 @@ fn maps_carry_their_units() {
     assert_eq!((m.unit_types[u.kind as usize].as_str(), u.player, u.x, u.y, u.heading), ("biggun", 3, 720, 3792, 16));
     assert_eq!((u.health, u.ammo, u.crew_condition, u.byte0, u.byte4), (100, 100, 0, 90, 100));
     assert_eq!(m.units[5].crew.len(), 2); // a flak88 with its two gunners
+    let sides: Vec<(&str, u8)> = m.players.iter().map(|p| (p.name.as_str(), p.side)).collect();
+    assert_eq!(sides, [("Spieler", 0), ("Gegner", 1), ("Verbündeter", 2), ("Neutrale", 3)]);
 }
 
 #[test]
@@ -300,3 +302,4 @@ fn every_unit_type_has_a_class() {
     assert!(classes.contains(&("t-26".into(), "tank".into())));
     assert!(classes.contains(&("flak88".into(), "szenit".into())));
 }
+

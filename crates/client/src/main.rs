@@ -472,8 +472,13 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 let Some(unit) = world.units.iter().find(|w| w.id == u.id) else { continue };
                 let t = &rules.types[unit.kind];
                 let s = status::Status {
-                    // alliances are not read yet: every other player is an enemy
-                    owner: if unit.player == mission::HUMAN_PLAYER { status::Owner::Local } else { status::Owner::Enemy },
+                    owner: if unit.player == mission::HUMAN_PLAYER {
+                        status::Owner::Local
+                    } else if mission::hostile(&assets.map.players, mission::HUMAN_PLAYER, unit.player) {
+                        status::Owner::Hostile
+                    } else {
+                        status::Owner::Other
+                    },
                     hp: unit.hp,
                     max_hp: t.health,
                     damaged_below: t.move_damage_hp,

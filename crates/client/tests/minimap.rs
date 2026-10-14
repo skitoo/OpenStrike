@@ -17,6 +17,7 @@ fn map(size: u32) -> Map {
         objects: Vec::new(),
         unit_types: Vec::new(),
         units: Vec::new(),
+        players: Vec::new(),
     }
 }
 

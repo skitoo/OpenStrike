@@ -6,14 +6,12 @@
 
 use std::collections::{BTreeMap, HashMap};
 
-use openstrike_formats::map::Map;
+use openstrike_formats::map::{Map, MapPlayer};
 use openstrike_sim::{CREW_FULL, Unit, UnitId, UnitType, World};
 
-/// The human player. **Assumption**, not read in the code: in single player the menu builds the
-/// players (`XCHNG\TOGAME\mplay_info`, written by `menu_dll.dll` `0x10018840`) from its session
-/// list, whose sides arrive through session messages (`0x1001cd1f`), so the value is only known at
-/// run time. Every map names its sides "Spieler", "Gegner", "Verbündeter" (player, enemy, ally),
-/// hence player 0. To check against the running game.
+/// The human player: in single player the game makes slot 0 the only human one (`Game_Dll.dll`
+/// `0x1004f320`, reached from `0x1004f4e0` unless `[0x10388464]`, a flag from the launcher, is 1;
+/// then the slots come from `XCHNG\TOGAME\mplay_info`, `0x1004f060`, as in multiplayer).
 pub const HUMAN_PLAYER: u8 = 0;
 
 /// The class OpenStrike simulates (tank unit vtable `0x100a83f0`).
@@ -23,6 +21,23 @@ pub const TANK: &str = "tank";
 /// at most [`CREW_FULL`]).
 pub fn crew_condition(percent: u8) -> i32 {
     ((((percent as i64) << 15) * 0x51eb_851f) >> 37).min(CREW_FULL as i64) as i32
+}
+
+/// Sides friendly to each side in single player (`Game_Dll.dll` `0x1004f320`): 0 and 2; side 3
+/// (every map's "Neutral") is in no table.
+const FRIENDS: [u8; 4] = [0b101, 0b010, 0b101, 0];
+/// Sides hostile to each side in single player: 1 to 0 and 2, and the other way round.
+const FOES: [u8; 4] = [0b010, 0b101, 0b010, 0];
+
+/// How player `p` sees player `q` (`0x1004ef20`: from their sides, `[0x101ff3ac + 2 * p]` gets
+/// the friends' bits and `[0x101ff390 + 2 * p]` the others' that are hostile). The map lists the
+/// players with their side; a player it does not list is on side 0.
+pub fn hostile(players: &[MapPlayer], p: u8, q: u8) -> bool {
+    let side = |p: u8| players.get(p as usize).map_or(0, |pl| pl.side as usize);
+    let (sp, sq) = (side(p), side(q));
+    let bit = 1u8.checked_shl(sq as u32).unwrap_or(0);
+    let row = |t: &[u8; 4]| t.get(sp).copied().unwrap_or(0);
+    row(&FRIENDS) & bit == 0 && row(&FOES) & bit != 0
 }
 
 /// Hit points and rounds from the map's percentages (`0x10040030`): `max(1, health% * Health /

@@ -54,6 +54,20 @@ pub struct MapUnit {
     pub crew: Vec<[u8; 6]>,
 }
 
+/// A player of the mission (`QED.EXE` `0x415b10`; `Game_Dll.dll` `0x1004f320` reads it from
+/// `XCHNG\TOGAME\mis_players` in single player): a 0x25-byte record, then 4 records of 0x2c and 2
+/// of 0x46 bytes (not read yet).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MapPlayer {
+    /// The side's name, 32 bytes ("Spieler", "Gegner", "Verbündeter").
+    pub name: String,
+    /// Side (byte 0x20, the slot's `+0x24`): the single-player sides 0 and 2 are friends, 1 is
+    /// hostile to both (`0x1004f320`).
+    pub side: u8,
+    /// Bytes 0x21-0x24 (slot `+0x21`, `+0x23`, `+0x26`; not read).
+    pub extra: [u8; 4],
+}
+
 #[derive(Debug, Clone)]
 pub struct Map {
     pub version: u32,
@@ -75,6 +89,7 @@ pub struct Map {
     /// Unit type names (`QED.EXE` `0x415140`, `XCHNG\TOGAME\mis_unitnames`): 16 bytes each.
     pub unit_types: Vec<String>,
     pub units: Vec<MapUnit>,
+    pub players: Vec<MapPlayer>,
 }
 
 impl Map {
@@ -202,5 +217,17 @@ pub fn parse_raw(data: &[u8]) -> Result<Map> {
     if r.pos() - start != size {
         return Err(Error::Invalid(format!("unit section of {} bytes, {size} declared", r.pos() - start)));
     }
-    Ok(Map { version, header, width, height, briefing, preview_size, preview, ground, layer2, object_sets, objects, unit_types, units })
+    let n_players = r.u32()? as usize;
+    if n_players > 12 {
+        return Err(Error::Invalid(format!("{n_players} players")));
+    }
+    let players = (0..n_players)
+        .map(|_| {
+            let b = r.bytes(0x25)?;
+            let player = MapPlayer { name: latin1(&b[..0x20]), side: b[0x20], extra: [b[0x21], b[0x22], b[0x23], b[0x24]] };
+            r.bytes(4 * 0x2c + 2 * 0x46)?;
+            Ok(player)
+        })
+        .collect::<Result<_>>()?;
+    Ok(Map { version, header, width, height, briefing, preview_size, preview, ground, layer2, object_sets, objects, unit_types, units, players })
 }

@@ -193,8 +193,8 @@ each row a background in entry 1 then the filled part from the left (`0x10009ff0
 `Ammo1` and `Ammo2` left (entry 5; local player's units only), the crew (entry 7, raised by half for veterans,
 with the crew's own condition over it in entry 8), then the hit points on two rows. Lengths (`0x10002cf0`) are
 `value * 2W / max`, 0x3f or more hiding a row. The hit points are entry 2, 3 under `MoveDamageHP` (half of
-`Health` for types without flag 8), 4 under a quarter of `Health`; entry 7 for an ally, 6 for an enemy
-(`0x10009ea0`). Over them the group number (glyph `n + 0x2f` of frame 13), and for the local player's units a
+`Health` for types without flag 8), 4 under a quarter of `Health`; for another player's units entry 7 when
+they are hostile to the local player, else 6 (`0x10009ea0`). Over them the group number (glyph `n + 0x2f` of frame 13), and for the local player's units a
 row of 4 x 4 weapon boxes (`0x1000a2b0`).
 
 ## Maps
@@ -211,14 +211,19 @@ The class of each type comes from `desc_common/units/UNITS` (`class name` lines:
 which the type factory (around `Game_Dll.dll` `0x1004b54e`) uses to build the type object. OpenStrike creates the
 `tank` class units (3466 on the 164 maps) and leaves the other classes out until they are written.
 
-**Players and the start view.** The players are not in the map: `menu_dll.dll` writes `XCHNG\TOGAME\mplay_info`
-(`0x10018840`: 12 entries of 0x28 bytes, name, id, side `+0x24` = index into the map's sides, start group
-`+0x25`, colour `+0x26`) from its session list, whose sides arrive through session messages (`0x1001cd1f`), single
-player included; `Game_Dll.dll` `0x1004f060` reads it into 4 player slots (`0x101ff408`, 0xb5 bytes). The view starts
+**Players and the start view.** `Game_Dll.dll` `0x1004f4e0` fills the 12 player slots (0xb5 bytes from
+`0x101ff3e8`: name, `+0x20` type 1 human / 2 computer / 3, `+0x24` side) one of two ways. Unless `[0x10388464]`
+(a flag the launcher passes, `0x1008d737`) is 1, it reads the map's players (`0x1004f320`): slot `i` takes the
+map's player `i` with its side, slot 0 is the only human one, and the sides are fixed: 0 and 2 friends, 1 hostile
+to both, 3 in neither table. Otherwise it reads `XCHNG\TOGAME\mplay_info` (`0x1004f060`), which `menu_dll.dll`
+writes from its session list (`0x10018840`: 12 entries of 0x28 bytes, name, id, side `+0x24`, start group
+`+0x25`, colour `+0x26`), every side hostile to every other. Then `0x1004ef20` gives each player `p` the bits of
+the players on a friendly side (`[0x101ff3ac + 2 * p]`) and of those on a hostile one (`[0x101ff390 + 2 * p]`).
+OpenStrike reads them as in single player (`crates/client/src/mission.rs`). The view starts
 in the middle of the map (`0x10071e40`); then every zone is made free (`+0x38` = 4, `+0x39` = 12, `0x1004e64c`),
 `0x10086930` hands the zones with a value out to the players at random, spreading them, and the view moves to
 the one of the local player (`0x100845f0`, `0x10084880`); 26 of the 164 single-player maps have none. OpenStrike
-starts in the middle of the map and assumes the human is player 0 (see `crates/client/src/mission.rs`).
+starts in the middle of the map.
 
 ```
 "SSSM", u32 version (0x10f), 16-byte GUID
@@ -240,8 +245,10 @@ units (0x4152f0; XCHNG\TOGAME\mis_mapunits, read by Game_Dll.dll 0x1003fe70):
     names), u8 crew count, i16 x, i16 y (map pixels; a vehicle goes to its cell's (15, 15), 0x10040190),
     u8 heading (& 31, hull and turret, 0x1002ce06), u8 player (id from player * 1024 + 1, 0x1003e370)
   editors only write units at least 4 cells from the edge
-sides (0x415b10; XCHNG\TOGAME\mis_players): u32 n, n x (0x25 + 0xb0 + 0x8c) bytes, starting with the
-  side's name ("Spieler", "Gegner", "Verbündeter" in every single-player map: player, enemy, ally)
+players (0x415b10; XCHNG\TOGAME\mis_players, read by Game_Dll.dll 0x1004f320 in single player): u32 n
+  (4 in every map), n x (0x25 + 4 x 0x2c + 2 x 0x46) bytes; the 0x25 bytes: 32-byte name ("Player", "Enemy",
+  "Ally", "Neutral" or their German / Russian names), u8 side (usually 0, 1, 2, 3; some maps put the ally on
+  side 1 or 0), u16 (an RGB565 colour?), u8, u8 (slot +0x21, +0x23, +0x26; not read)
 u32 n, n x 0x4e-byte records, then a byte per cell (0x4155d0)
 u32 n, n compressed blobs (`VOVA_Comp`, 0x4156b0), each u32 size + data
 a byte per cell (0x415740)

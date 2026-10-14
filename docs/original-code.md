@@ -227,7 +227,7 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | Address | What |
 |---|---|
 | `0x10092ea0` | `.sue` archive reader |
-| `0x1004f060` | player slots (4 x 0xb5 bytes at `0x101ff408`: type 1 human / 3 from `0xa`, colour, side `+3`, start group `+4`) from `XCHNG\TOGAME\mplay_info` (12 x 0x28), then `mis_players` (u32, 3 x 0x161) |
+| `0x1004f4e0` | player slots (12 x 0xb5 bytes from `0x101ff3e8`: name, `+0x20` type, `+0x24` side): `0x1004f320` from the map's players in single player (`[0x10388464]` != 1), else `0x1004f060` from `XCHNG\TOGAME\mplay_info`; then `0x1004ef20` builds the friend and hostile player masks `[0x101ff3ac + 2 * p]`, `[0x101ff390 + 2 * p]` from the side table `0x101ff3d8` (3 bytes per side: friendly sides, hostile sides, player count) |
 | `0x10072fc3` | interface: `intrpic.dat` (`[0x10382fc0]`), `icon.rs2` (`[0x10382b88]`), `intr.pl` |
 | `0x1006f540` | the `PANL` window: rect from `intrpic.dat` frame 1 at the bottom left (`[0x10353ee4]` = screen height), minimap widget `0x10357008` |
 | `0x1006e5c0`, `0x1006eef0`, `0x1006f3f2` | minimap: origin and scale (`+0x11`, `+0x15`, `+0x25`), drawing from `0x101f64e6` (preview, read by `0x1004c8b0` from `map_mini`), click to move the view |
