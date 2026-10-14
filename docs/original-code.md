@@ -194,7 +194,16 @@ per-set loaders, placements and drawings are listed in `docs/formats.md` (Object
 object in its cell (record: next u16, palette nibble and 8 px quarter bits, u16 word), `0x1006ffb0` / `0x1006f740`
 add a sprite to a layer's draw list (20-byte items: next, x, y, sort y, record, sprite, palette), sorted by sort y,
 y, x. Layers come from `land/<SET>` (`level`), read by each class (`0x100530c0` for `cliff`'s `level1`/`level2`).
-Unit sprites go through `0x100068d0` and `0x1000d0d0` (layer given by the caller; which one is not read yet).
+Units are objects of the `unit` class (instance `0x10294a70`, vtable `0x100abdcc`, records of 14 bytes at
+`0x10294a88`): its drawing `0x100562c0` calls the unit type's `+0x24` (`0x100068d0` vehicles, `0x1000d0d0`) with
+the class's layer `+0xc`, which `0x10052390` (vtable `+0x3c`, called by the generic `land\%s` reader
+`0x10052890` for every class) sets from `level`: 3 in `land/UNIT`. The colour sprite goes to that layer, the
+shadow to layer 6 with flag 1. Draw lists: heads at `0x1037f120 + 4 * layer`, tails at `0x1037f100 + 4 * layer`.
+Frame: ground, layers 0-5 (`0x1006fbf0`, `cad800.dll` `0x100057ac`, no pixel word), shadows (`0x1006fdb0`,
+`0x10007938`), upright layer 7 (driver `+0xa9c8`, `cad800.dll` `0x10005e41`: no depth test, writes
+`(sort y + 0x440) << 5` into the pixel word keeping bits 0-1, darkens the pixel when bit 1 is set). Every shadow
+item (map objects and units) has flag 1, so bit 1 is never set by a shadow: upright objects are never darkened,
+while units, drawn before the shadows, are darkened by all of them, their own included.
 
 
 | Address | What |

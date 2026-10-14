@@ -231,7 +231,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         let mouse = rl.get_mouse_position();
         let mouse_world = cam.screen_to_map(mouse.x, mouse.y);
         let mut units: Vec<UnitView> = scene::units(&world, &proj);
-        units.sort_by_key(|u| u.screen.1);
+        units.sort_by_key(UnitView::key);
 
         if rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) {
             press = Some(mouse_world);
@@ -256,7 +256,7 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             accumulator -= tick;
         }
         units = scene::units(&world, &proj);
-        units.sort_by_key(|u| u.screen.1);
+        units.sort_by_key(UnitView::key);
 
         let view = view_rect(&cam, screen);
         // drop the ground chunks far from the view, then rasterise a few missing ones, nearest first
@@ -299,8 +299,16 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     m.draw_texture(texture, cx * CHUNK, cy * CHUNK, Color::WHITE);
                 }
             }
+            // layers 0-5, the units among layer 3
+            let mut units_left = units.iter().peekable();
             for p in &objects.ground {
+                while let Some(u) = units_left.next_if(|u| u.key() <= p.key()) {
+                    draw_unit(&mut m, &vehicles[u.kind], u, view);
+                }
                 draw_sprite(&mut m, part(p), p.screen, view);
+            }
+            for u in units_left {
+                draw_unit(&mut m, &vehicles[u.kind], u, view);
             }
         }
 
@@ -316,19 +324,13 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         }
         {
             let mut m = d.begin_mode2D(camera2d);
-            for u in units.iter().filter(|u| selected.contains(&u.id)) {
-                m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
-            }
-            // upright objects and units, back to front
-            let mut units_left = units.iter().peekable();
+            // upright objects (layer 7) over everything, never darkened: every shadow sets only
+            // flag bit 0 and `cad800.dll` `0x10005e41` darkens on bit 1
             for p in &objects.upright {
-                while let Some(u) = units_left.next_if(|u| u.screen.1 <= p.sort_y) {
-                    draw_unit(&mut m, &vehicles[u.kind], u, view);
-                }
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
-            for u in units_left {
-                draw_unit(&mut m, &vehicles[u.kind], u, view);
+            for u in units.iter().filter(|u| selected.contains(&u.id)) {
+                m.draw_ellipse_lines(u.screen.0, u.screen.1, 22.0, 11.0, Color::LIME);
             }
             if show_blocked {
                 draw_blocked(&mut m, &rules.grid, &proj, view);

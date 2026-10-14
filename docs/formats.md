@@ -92,8 +92,9 @@ skips n pixels. The map's shadow layer (6) is drawn by `Game_Dll.dll` `0x1006fdb
 16-bit word (buffer `0x101f2e50` = back buffer `0x101081ec` + `0xeac64`, 800 x 600, filled with the row's depth
 `y << 5`): a shadow pixel is drawn only if the word has none of bits `0x8007`, then the shadow's flag is set in it
 and the pixel becomes `((p & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness, +4/63 green, +5/31 blue). So
-overlapping shadows darken once. Colour sprites drawn later on a pixel whose word has bit 1 set are darkened the
-same way (`0x10004c4b`); which shadows set bit 1 rather than another bit is not read yet.
+overlapping shadows darken once. The flag is the draw item's `+0x10`, 1 for every shadow (map objects and units).
+Upright sprites (layer 7, `0x10005e41`) drawn on a pixel whose word has bit 1 set would be darkened the same way,
+but no shadow sets bit 1, so they never are; units (layer 3) are drawn before the shadows and darkened by them.
 
 The tint comes from the screen's pixel format (`0x100013c5` reads the DirectDraw surface description and calls
 `0x10001130(R mask, G mask, B mask)`): `(5 << (11 - leading zeros of B)) + (2 << (11 - leading zeros of G))`, the

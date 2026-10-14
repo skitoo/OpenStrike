@@ -50,12 +50,24 @@ pub fn objects(map: &Map, proj: &Projection, sets: &[ObjectSet]) -> Objects {
             }
         }
     }
-    let key = |p: &ObjectPart| (p.layer, p.sort_y, p.screen.1, p.screen.0);
-    out.ground.sort_by_key(key);
-    out.shadows.sort_by_key(key);
-    out.upright.sort_by_key(key);
+    out.ground.sort_by_key(ObjectPart::key);
+    out.shadows.sort_by_key(ObjectPart::key);
+    out.upright.sort_by_key(ObjectPart::key);
     out
 }
+
+impl ObjectPart {
+    /// Draw order: layer, then the draw list order (sort y, y, x).
+    pub fn key(&self) -> (u8, i32, i32, i32) {
+        (self.layer, self.sort_y, self.screen.1, self.screen.0)
+    }
+}
+
+/// Layer of the units' colour sprites: `level` of `land/UNIT` (3), read into the `unit` class
+/// (`Game_Dll.dll` `0x10294a70` + `0xc`, by `0x10052390`) and passed to the draw lists by its
+/// drawing (`0x100562c0`). Their shadows go to layer 6 (`0x100068d0`). So units are drawn among the
+/// layer 3 objects, under the shadows (which darken them) and under every upright object.
+pub const LAYER_UNITS: u8 = 3;
 
 /// A unit as drawn: screen position and the sprite frames of its hull and turret headings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -66,6 +78,13 @@ pub struct UnitView {
     pub screen: (i32, i32),
     pub frame: usize,
     pub turret_frame: usize,
+}
+
+impl UnitView {
+    /// Draw order among the ground layers (sort y and y are both the unit's screen y).
+    pub fn key(&self) -> (u8, i32, i32, i32) {
+        (LAYER_UNITS, self.screen.1, self.screen.1, self.screen.0)
+    }
 }
 
 /// Sprite frame for a map heading (0-31, clockwise from east): the heading is projected, then
