@@ -81,7 +81,7 @@ the data: each kind's rows end exactly on their byte length with its own format,
 |---|---|---|
 | `0xa2` (all unit sprites, ground sprites) | `0x100095a6`, also `0x100044f5` | 2-bit mode, 6-bit n: `0x00` copy n palette pixels; `0x40` copy n pixels blended 50 % with the background, `(src + dst - ((src ^ dst) & mask)) >> 1`; `0x80` repeat the next palette pixel n times; `0xC0` skip n |
 | `0xa1` (upright sprites of map objects) | `0x10008f4c` | 7-bit n: `0x00` copy n palette pixels; `0x80`, then a palette index c: c = 0 skips n, else repeats c n times |
-| `0xa9` | `0x10009228` | as `0xa1`, colours from a 32-bit table with a per-colour alpha (bits 19-23, 31 = opaque; not applied yet) |
+| `0xa9` | `0x10009228` | as `0xa1`, with the 32-bit palettes of the effects (`animats/*.col`, 1024 bytes): low 16 bits an RGB565 colour already weighted, bits 19-23 the background weight `k`; pixel = background * k / 32 per field (mask `G << 16 \| R \| B`, `0x07e0f81f`) + colour, `k = 31` leaves it untouched. Used only by effects: 4125 frames in 87 `animats/*.ani` (muzzle fire, explosions, dust, splashes) and `SHOT.PCK` |
 
 Reading `0xa1` sprites with the `0xa2` format (as OpenStrike did before) cuts rows apart: bits of ships and cranes
 float beside them.

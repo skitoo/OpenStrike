@@ -227,6 +227,7 @@ of `+0x1a`, vtable entry 0 `0x10033100`; set by the selection `0x10082edb`) or w
 | `0x10092ea0` | `.sue` archive reader |
 | `cad800.dll` `0x100044f5` | sprite RLE blitter (`0xa2` format); `0x10001c13` colour key `0xF81F` |
 | `cad800.dll` `0x10008edd` | sprite dispatcher by kind: `0xa1` `0x10008f4c`, `0xa2` `0x100095a6`, `0xa3` `0x100098db`, `0xa9` `0x10009228` |
+| `cad800.dll` `0x10009228` | `0xa9` blitter: palette entries are u32 (`[ebx + 4 * index]`, the others read u16), background weight `entry >> 19 & 31` (31: pixel skipped), field mask `[0x10010084]` = `G << 16 \| R \| B` (set by `0x100053d3`, `0x100067bd`), pixel = `((split(bg) * k) >> 5 & mask)` recombined + `entry & 0xffff` |
 | `cad800.dll` `0x10007938`, `0x100098db` | shadow blitters: 7-bit runs, darken once per pixel; `0x10007938` (driver `+0xa9d4`, layer 6 from `Game_Dll.dll` `0x1006fdb0`) keeps the flag in the pixel word, `0x100098db` (dispatcher) tests the pixel itself |
 | `0x1006fbf0` | draws layers 0-5 of the draw lists (`0x1037f120` + 4 * layer) through driver `+0xa9d0` (`cad800.dll` `0x100057ac`) |
 | `cad800.dll` `0x10001130` | pixel format from the R, G, B masks (`0x100013c5`, DirectDraw surface description): field shifts, lowest bits `0x10012b38`, shadow tint `0x10012b58` = `(5 << (11 - zeros(B))) + (2 << (11 - zeros(G)))` |

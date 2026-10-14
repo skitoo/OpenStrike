@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use openstrike_formats::{map, palette::Palette, sprite, sue::Archive};
+use openstrike_formats::{map, palette::{AlphaPalette, Palette}, sprite, sue::Archive};
 
 fn data_dir() -> Option<PathBuf> {
     let dir = std::env::var_os("OPENSTRIKE_DATA").map(PathBuf::from).unwrap_or_else(|| {
@@ -246,4 +246,36 @@ fn every_house_reads_as_the_loader_does() {
         }
     }
     assert!(houses > 100, "{houses} houses");
+}
+
+/// Frames of a `CA` container (`01 00 00 CA`, u32 count, u32 offsets), as used by `.ani` files.
+fn ca_frames(data: &[u8]) -> Vec<&[u8]> {
+    let u32_at = |at: usize| u32::from_le_bytes(data[at..at + 4].try_into().unwrap()) as usize;
+    assert_eq!(data[3], 0xca);
+    let count = u32_at(4);
+    (0..count).map(|i| &data[u32_at(8 + 4 * i)..]).collect()
+}
+
+#[test]
+fn every_effect_alpha_frame_decodes_with_its_palette() {
+    let Some(dir) = data_dir() else { return };
+    let animats = Archive::parse(std::fs::read(dir.join("animats.sue")).unwrap()).unwrap();
+    let names: Vec<String> = animats.names().map(String::from).collect();
+    let mut frames = 0;
+    for name in names.iter().filter(|n| n.to_ascii_lowercase().ends_with(".ani")) {
+        let data = animats.read(name).unwrap().unwrap();
+        let stem = &name[..name.len() - 4];
+        let alpha: Vec<&[u8]> = ca_frames(&data).into_iter().filter(|f| sprite::frame_kind(f) == Some(sprite::KIND_ALPHA)).collect();
+        if alpha.is_empty() {
+            continue;
+        }
+        let col = names.iter().find(|n| n.eq_ignore_ascii_case(&format!("{stem}.col"))).unwrap();
+        let palette = AlphaPalette::parse(&animats.read(col).unwrap().unwrap()).unwrap();
+        for f in alpha {
+            let image = sprite::decode_alpha(f, &palette).unwrap();
+            assert_eq!(image.rgba.len(), (image.width * image.height * 4) as usize);
+            frames += 1;
+        }
+    }
+    assert_eq!(frames, 4125);
 }

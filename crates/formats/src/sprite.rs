@@ -21,14 +21,15 @@
 //! flag per screen pixel and draws `((pixel & 0xf7de) >> 1) + 0x0085` in RGB565 (half brightness,
 //! a touch of green and blue), see [`shade`].
 
-use crate::palette::Palette;
+use crate::palette::{AlphaPalette, Palette, rgb565};
 use crate::reader::{Reader, u32_at};
 use crate::{Error, Result};
 
 pub const KIND_SHADOW: u8 = 0xa3;
 /// Colour frames with 7-bit runs (`cad800.dll` `0x10008f4c`).
 pub const KIND_WIDE: u8 = 0xa1;
-/// Like [`KIND_WIDE`] with a per-colour alpha (`0x10009228`); the alpha is not applied yet.
+/// Like [`KIND_WIDE`] with a 32-bit palette carrying a per-colour opacity (`0x10009228`), see
+/// [`decode_alpha`]. Used by the effects only (`animats/*.ani`, `SHOT.PCK`).
 pub const KIND_ALPHA: u8 = 0xa9;
 pub const KIND_UNKNOWN_A5: u8 = 0xa5;
 
@@ -149,8 +150,11 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
     if kind == KIND_UNKNOWN_A5 {
         return Err(Error::Unsupported("sprite frame kind 0xa5".into()));
     }
+    if kind == KIND_ALPHA {
+        return Err(Error::Unsupported("sprite frame kind 0xa9 needs a 32-bit palette (decode_alpha)".into()));
+    }
     let shadow = kind == KIND_SHADOW;
-    let wide = matches!(kind, KIND_WIDE | KIND_ALPHA);
+    let wide = kind == KIND_WIDE;
     let mut rgba = vec![0u8; w * h * 4];
     for y in 0..h {
         let length = r.u16()? as usize;
@@ -219,3 +223,49 @@ pub fn decode(frame: &[u8], palette: &Palette) -> Result<Image> {
     }
     Ok(Image { anchor: (x0, y0), width: w as u32, height: h as u32, rgba })
 }
+
+/// Decodes a `0xa9` frame (`cad800.dll` `0x10009228`) to **premultiplied** RGBA8: drawn with
+/// `result = colour + background * (1 - alpha)` it gives the game's
+/// `background * k / 32 + colour` (see [`crate::palette::blend_alpha`], exact per RGB565 field up
+/// to rounding). Rows use the 7-bit commands of 0xa1; entries with `k = 31` stay transparent.
+pub fn decode_alpha(frame: &[u8], palette: &AlphaPalette) -> Result<Image> {
+    let mut r = Reader::new(frame);
+    let (x0, y0) = (r.i16()? as i32, r.i16()? as i32);
+    let (w, h) = (r.u16()? as usize, r.u16()? as usize);
+    let kind = r.u8()?;
+    if kind != KIND_ALPHA {
+        return Err(Error::Invalid(format!("sprite frame kind {kind:#x}, not 0xa9")));
+    }
+    let mut rgba = vec![0u8; w * h * 4];
+    for y in 0..h {
+        let length = r.u16()? as usize;
+        let mut line = Reader::new(r.bytes(length)?);
+        let mut x = 0usize;
+        let mut put = |x: usize, c: u8| {
+            let k = palette.background_weight(c);
+            if x < w && k != 31 {
+                let [red, green, blue] = rgb565(palette.colour(c));
+                let alpha = (255 * (32 - k as u32) / 32) as u8;
+                rgba[(y * w + x) * 4..][..4].copy_from_slice(&[red, green, blue, alpha]);
+            }
+        };
+        while line.pos() < length {
+            let op = line.u8()?;
+            let n = (op & 0x7f) as usize;
+            if op & 0x80 != 0 {
+                let Ok(c) = line.u8() else { break };
+                if c != 0 {
+                    (x..x + n).for_each(|i| put(i, c));
+                }
+            } else {
+                let take = n.min(length - line.pos());
+                for (i, &c) in line.bytes(take)?.iter().enumerate() {
+                    put(x + i, c);
+                }
+            }
+            x += n;
+        }
+    }
+    Ok(Image { anchor: (x0, y0), width: w as u32, height: h as u32, rgba })
+}
+

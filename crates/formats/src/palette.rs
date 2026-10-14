@@ -41,3 +41,48 @@ impl Palette {
         data.as_chunks::<512>().0.iter().map(|c| Self::parse(c)).collect()
     }
 }
+
+/// The 32-bit palettes of the effect animations (`animats/*.col`, 1024 bytes), read by the `0xa9`
+/// blitter (`cad800.dll` `0x10009228`): the low 16 bits are an RGB565 colour already weighted by
+/// its opacity, the high byte the weight left to what is under it (`k = byte >> 3` in 32ths).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlphaPalette {
+    pub entries: [u32; 256],
+}
+
+impl AlphaPalette {
+    pub fn parse(data: &[u8]) -> Result<Self> {
+        let raw = data.get(..1024).ok_or(Error::Truncated { need: 1024, at: 0 })?;
+        let mut entries = [0u32; 256];
+        for (v, quad) in entries.iter_mut().zip(raw.as_chunks::<4>().0) {
+            *v = u32::from_le_bytes(*quad);
+        }
+        Ok(Self { entries })
+    }
+
+    /// Weight of the background in 32ths (`entry >> 19 & 31`); 31 leaves the pixel untouched.
+    pub fn background_weight(&self, index: u8) -> u8 {
+        (self.entries[index as usize] >> 19 & 31) as u8
+    }
+
+    /// The weighted colour added to the background.
+    pub fn colour(&self, index: u8) -> u16 {
+        self.entries[index as usize] as u16
+    }
+}
+
+/// What the `0xa9` blitter writes over `background` for palette entry `index`, both in RGB565:
+/// each field of the background times `k / 32` (fields split by the mask `G << 16 | R | B`,
+/// `0x07e0f81f`, multiplied, shifted right 5 and masked again), plus the entry's colour.
+/// `None` when `k` is 31: the pixel is left alone.
+pub fn blend_alpha(palette: &AlphaPalette, index: u8, background: u16) -> Option<u16> {
+    const MASK: u32 = 0x07e0_f81f;
+    let k = palette.background_weight(index) as u32;
+    if k == 31 {
+        return None;
+    }
+    let split = ((background as u32) << 16 | background as u32) & MASK;
+    let scaled = (split.wrapping_mul(k) >> 5) & MASK;
+    Some(((scaled >> 16 | scaled) as u16).wrapping_add(palette.colour(index)))
+}
+
