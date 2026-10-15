@@ -104,7 +104,10 @@ the units update, and one that enters another cell draws the generator and looks
 The minimap darkens the cells the local side (`[0x10387cad]` = `1 << side`) does not see (`0x1006f04b`; the
 halved minimap tests map cell `(2x, 2y)`, `0x1006f0a0`); the view builds a light map of 16 x 8 pixel tiles from
 the same bits each frame (`0x10071a10`: 0 unseen, 0x40 on the edge, 0x80 seen, then averaged) that the driver
-applies (not read yet).
+applies. In `cad800.dll` `0x10002ba0`, an all-zero 16 x 8 tile is halved, an all-0x80 tile copied, and mixed
+tiles use a per-pixel factor interpolated from the four corners in 8.8 fixed point. The RGB channel products
+carry their fractional remainders across each row; the carry resets at the start of every row. OpenStrike
+reproduces this interpolation and row carry in its view shader.
 
 ## Units (tank vtable `0x100a83f0`)
 

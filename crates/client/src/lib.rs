@@ -4,6 +4,7 @@
 pub mod assets;
 pub mod camera;
 pub mod chunks;
+pub mod fog;
 pub mod info;
 pub mod minimap;
 pub mod mission;

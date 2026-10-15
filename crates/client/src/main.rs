@@ -14,7 +14,7 @@ use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
 use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
-use openstrike::{info, minimap, mission, orders};
+use openstrike::{fog, info, minimap, mission, orders};
 use openstrike::options::{self, Options, Parsed};
 use openstrike::{selection, status, terrain};
 
@@ -113,6 +113,56 @@ void main() {
     finalColor = c;
 }
 "#;
+/// Applies the RGB565 light-map blit from `cad800.dll` `0x10002ba0` (see `fog::factor`), including
+/// its per-row fractional carry. `view` holds the zoom and screen height.
+const FOG_SHADER: &str = r#"#version 330
+in vec2 fragTexCoord;
+in vec4 fragColor;
+uniform sampler2D texture0;
+uniform sampler2D light;
+uniform vec3 view; // zoom, then the screen's height
+out vec4 finalColor;
+int corner(int r, int c) { return int(texelFetch(light, ivec2(c, r), 0).r * 255.0 + 0.5); }
+int factor(int tl, int tr, int bl, int br, int x, int y) {
+    int start = (tl + 127) << 5;
+    int across = (tr - tl) * 2;
+    int down = (bl - tl) * 4;
+    int bend = ((br - tr) - (bl - tl)) >> 2;
+    return (start + y * down + x * (across + y * bend)) >> 8;
+}
+void main() {
+    ivec2 p = ivec2(floor(vec2(gl_FragCoord.x, view.y - gl_FragCoord.y) / view.x));
+    int row = (p.y >> 3) + 8, col = (p.x >> 4) + 8;
+    int tl = corner(row, col), tr = corner(row, col + 1), bl = corner(row + 1, col), br = corner(row + 1, col + 1);
+    vec4 c = texture(texture0, fragTexCoord);
+    if (tl == 0 && tr == 0 && bl == 0 && br == 0) {
+        vec3 range = vec3(31.0, 63.0, 31.0);
+        vec3 levels = floor(c.rgb * range + 0.5);
+        levels = floor(levels * 0.5);
+        finalColor = vec4(floor(levels * 255.0 / range + 0.001) / 255.0, 1.0);
+        return;
+    }
+    if (tl == 128 && tr == 128 && bl == 128 && br == 128) {
+        finalColor = c;
+        return;
+    }
+    int px = p.x & 15, py = p.y & 7;
+    vec3 range = vec3(31.0, 63.0, 31.0);
+    ivec3 carry = ivec3(0);
+    ivec3 levels = ivec3(0);
+    ivec2 texture_size = textureSize(texture0, 0);
+    for (int x = 0; x <= px; ++x) {
+        vec2 uv = fragTexCoord + vec2((float(x - px) * view.x) / float(texture_size.x), 0.0);
+        vec3 color = texture(texture0, uv).rgb;
+        ivec3 input_levels = ivec3(floor(color * range + 0.5));
+        ivec3 product = input_levels * factor(tl, tr, bl, br, x, py) + carry;
+        carry = product & ivec3(31);
+        levels = product / 32;
+    }
+    finalColor = vec4(floor(vec3(levels) * 255.0 / range + 0.001) / 255.0, 1.0);
+}
+"#;
+
 /// Screen size and camera for the unit shader.
 ///
 /// # Safety
@@ -330,6 +380,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let shadow_locs = ["mask", "skip_a", "skip_b"].map(|n| shadow_shader.get_shader_location(n));
     let mut depth_shader = rl.load_shader_from_memory(&thread, None, Some(DEPTH_SHADER));
     let mut unit_shader = rl.load_shader_from_memory(&thread, None, Some(UNIT_SHADER));
+    let mut fog_shader = rl.load_shader_from_memory(&thread, None, Some(FOG_SHADER));
+    let fog_light_loc = fog_shader.get_shader_location("light");
+    let fog_view_loc = fog_shader.get_shader_location("view");
+    let mut light_texture: Option<Texture2D> = None;
     let unit_depth_loc = unit_shader.get_shader_location("depth");
     let unit_size_loc = unit_shader.get_shader_location("size");
     let unit_view_loc = unit_shader.get_shader_location("view");
@@ -614,13 +668,41 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
 
+        // the light map of what the local side sees (`Game_Dll.dll` `0x10071a10`)
+        {
+            let view = (cam.x as i32 - proj.to_screen(0, 0).0, cam.y as i32);
+            let size = ((screen.0 / cam.zoom) as i32, (screen.1 / cam.zoom) as i32);
+            let map_size = (assets.map.width as i32, assets.map.height as i32);
+            let light = fog::light(view, size, map_size, |x, y| world.sees(local_side, x, y));
+            let (w, h) = (light.stride as i32, (light.corners.len() / light.stride) as i32);
+            if light_texture.as_ref().is_none_or(|t| t.width != w || t.height != h) {
+                let image = Image::gen_image_color(w, h, Color::BLANK);
+                let mut image = image;
+                image.set_format(raylib::ffi::PixelFormat::PIXELFORMAT_UNCOMPRESSED_GRAYSCALE);
+                let t = rl.load_texture_from_image(&thread, &image).expect("light texture");
+                t.set_texture_filter(&thread, TextureFilter::TEXTURE_FILTER_POINT);
+                light_texture = Some(t);
+            }
+            light_texture.as_mut().unwrap().update_texture(&light.corners).expect("light size");
+        }
         if minimap_tick != Some(world.tick) {
             minimap_texture.update_texture(&minimap::render(&assets.map, |x, y| world.sees(local_side, x, y))).expect("minimap size");
             minimap_tick = Some(world.tick);
         }
         let mut d = rl.begin_drawing(&thread);
         d.clear_background(Color::BLACK);
-        d.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
+        {
+            let raw = *fog_shader.as_ref();
+            let tex = light_texture.as_ref().expect("light map");
+            let mut f = d.begin_shader_mode(&mut fog_shader);
+            // SAFETY: binds a texture alive for the whole frame to the active shader
+            unsafe {
+                raylib::ffi::SetShaderValueTexture(raw, fog_light_loc, **tex);
+                let view = [cam.zoom, sh as f32, 0.0];
+                raylib::ffi::SetShaderValue(raw, fog_view_loc, view.as_ptr().cast(), raylib::ffi::ShaderUniformDataType::SHADER_UNIFORM_VEC3 as i32);
+            }
+            f.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
+        }
         {
             let mut m = d.begin_mode2D(camera2d);
             // the status bars of the selected units, in drawing order
