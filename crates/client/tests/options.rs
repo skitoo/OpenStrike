@@ -20,7 +20,18 @@ fn defaults_to_the_sample_map() {
 
 #[test]
 fn parses_every_option() {
-    let o = run(&["--data", "/g", "--climate", "Winter", "--zoom", "1.5", "--look-at", "10, 20", "--show-blocked", "m.ssm"]);
+    let o = run(&[
+        "--data",
+        "/g",
+        "--climate",
+        "Winter",
+        "--zoom",
+        "1.5",
+        "--look-at",
+        "10, 20",
+        "--show-blocked",
+        "m.ssm",
+    ]);
     assert_eq!(o.data.to_str(), Some("/g"));
     assert_eq!(o.climate.as_deref(), Some("winter"));
     assert_eq!((o.zoom, o.look_at, o.show_blocked), (1.5, Some((10, 20)), true));

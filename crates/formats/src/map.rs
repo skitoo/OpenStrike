@@ -14,7 +14,8 @@ use crate::{Error, Result};
 pub const CELL: u32 = 32;
 
 /// Ground types in the order of `desc_common/GROUNDTYPES`, indexed by bits 8-11 of [`Map::layer2`].
-pub const GROUND_TYPES: [&str; 8] = ["grass", "lightgrass", "pashnya", "swamp", "darkground", "lightground", "water", "sand"];
+pub const GROUND_TYPES: [&str; 8] =
+    ["grass", "lightgrass", "pashnya", "swamp", "darkground", "lightground", "water", "sand"];
 pub const GROUND_WATER: u8 = 6;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,7 +107,9 @@ impl Map {
     /// bridge tiles of 60 maps match the bridge rule.
     pub fn blocked(&self, tx: u32, ty: u32) -> bool {
         let (cx, cy) = (tx / 2, ty / 2);
-        cx < self.width && cy < self.height && (self.layer2[(cy * self.width + cx) as usize] >> ((tx & 1) + 2 * (ty & 1))) & 1 != 0
+        cx < self.width
+            && cy < self.height
+            && (self.layer2[(cy * self.width + cx) as usize] >> ((tx & 1) + 2 * (ty & 1))) & 1 != 0
     }
 
     /// Ground type index of a cell (see [`GROUND_TYPES`]).
@@ -178,9 +181,7 @@ pub fn parse_raw(data: &[u8]) -> Result<Map> {
     let object_sets = (0..n_sets).map(|_| r.bytes(16).map(latin1)).collect::<Result<_>>()?;
     let n_objects = r.u32()? as usize;
     let objects = (0..n_objects)
-        .map(|_| {
-            Ok(Object { x: r.i16()?, y: r.i16()?, set: r.u8()?, frame: r.u8()?, extra: [r.u8()?, r.u8()?] })
-        })
+        .map(|_| Ok(Object { x: r.i16()?, y: r.i16()?, set: r.u8()?, frame: r.u8()?, extra: [r.u8()?, r.u8()?] }))
         .collect::<Result<_>>()?;
     let n_types = r.u32()? as usize;
     if n_types > 256 {
@@ -224,10 +225,26 @@ pub fn parse_raw(data: &[u8]) -> Result<Map> {
     let players = (0..n_players)
         .map(|_| {
             let b = r.bytes(0x25)?;
-            let player = MapPlayer { name: latin1(&b[..0x20]), side: b[0x20], extra: [b[0x21], b[0x22], b[0x23], b[0x24]] };
+            let player =
+                MapPlayer { name: latin1(&b[..0x20]), side: b[0x20], extra: [b[0x21], b[0x22], b[0x23], b[0x24]] };
             r.bytes(4 * 0x2c + 2 * 0x46)?;
             Ok(player)
         })
         .collect::<Result<_>>()?;
-    Ok(Map { version, header, width, height, briefing, preview_size, preview, ground, layer2, object_sets, objects, unit_types, units, players })
+    Ok(Map {
+        version,
+        header,
+        width,
+        height,
+        briefing,
+        preview_size,
+        preview,
+        ground,
+        layer2,
+        object_sets,
+        objects,
+        unit_types,
+        units,
+        players,
+    })
 }

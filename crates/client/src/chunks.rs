@@ -27,5 +27,8 @@ pub fn visible(view: Rect, world: (i32, i32)) -> Vec<(i32, i32)> {
 pub fn keep(chunk: (i32, i32), view: Rect) -> bool {
     let margin = KEEP_MARGIN * CHUNK;
     let (x, y) = (chunk.0 * CHUNK, chunk.1 * CHUNK);
-    x < view.x + view.w + margin && y < view.y + view.h + margin && x + CHUNK > view.x - margin && y + CHUNK > view.y - margin
+    x < view.x + view.w + margin
+        && y < view.y + view.h + margin
+        && x + CHUNK > view.x - margin
+        && y + CHUNK > view.y - margin
 }

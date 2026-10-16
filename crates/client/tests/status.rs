@@ -1,7 +1,18 @@
-use openstrike::status::{bars, group_at, Line, Owner, Status, AMMO, BACKGROUND, CREW, CREW_BAR, DAMAGED, HEALTHY, HOSTILE, OTHER, WRECKED};
+use openstrike::status::{
+    AMMO, BACKGROUND, CREW, CREW_BAR, DAMAGED, HEALTHY, HOSTILE, Line, OTHER, Owner, Status, WRECKED, bars, group_at,
+};
 
 fn pz4g(owner: Owner) -> Status {
-    Status { owner, hp: 450, max_hp: 450, damaged_below: 300, crew: 0x8000, veteran: false, ammo: [122, 2700], max_ammo: [122, 2700] }
+    Status {
+        owner,
+        hp: 450,
+        max_hp: 450,
+        damaged_below: 300,
+        crew: 0x8000,
+        veteran: false,
+        ammo: [122, 2700],
+        max_ammo: [122, 2700],
+    }
 }
 
 fn line(x: i32, y: i32, len: i32, colour: usize) -> Line {

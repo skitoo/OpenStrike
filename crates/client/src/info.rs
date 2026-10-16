@@ -73,7 +73,15 @@ pub const GAUGE_COLOURS: [usize; 4] = [2, 7, 3, 3];
 pub const CREW_COLOUR: usize = 8;
 
 /// A unit's fields. `crew_shown` is the crew condition the status bars show (raised for veterans).
-pub fn unit_fields(hp: i32, max_hp: i32, crew: i32, crew_shown: i32, ammo: [i32; 2], max_ammo: [i32; 2], friendly: bool) -> [Option<Field>; 4] {
+pub fn unit_fields(
+    hp: i32,
+    max_hp: i32,
+    crew: i32,
+    crew_shown: i32,
+    ammo: [i32; 2],
+    max_ammo: [i32; 2],
+    friendly: bool,
+) -> [Option<Field>; 4] {
     let hp_percent = (hp * 100 / max_hp).max(1);
     let shown = (crew_shown * 1000) >> 15;
     let own = (crew * 1000) >> 15;
@@ -83,10 +91,18 @@ pub fn unit_fields(hp: i32, max_hp: i32, crew: i32, crew_shown: i32, ammo: [i32;
         under: Some(own * 100 / 1000),
     };
     let ammo_field = |i: usize| {
-        (friendly && max_ammo[i] != 0)
-            .then(|| Field { value: ammo[i].to_string(), percent: ammo[i] * 100 / max_ammo[i], under: None })
+        (friendly && max_ammo[i] != 0).then(|| Field {
+            value: ammo[i].to_string(),
+            percent: ammo[i] * 100 / max_ammo[i],
+            under: None,
+        })
     };
-    [Some(Field { value: hp.to_string(), percent: hp_percent, under: None }), Some(crew_field), ammo_field(0), ammo_field(1)]
+    [
+        Some(Field { value: hp.to_string(), percent: hp_percent, under: None }),
+        Some(crew_field),
+        ammo_field(0),
+        ammo_field(1),
+    ]
 }
 
 /// Length of a gauge `width` pixels wide for `percent` (`0x10077fb0`).

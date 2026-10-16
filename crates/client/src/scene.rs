@@ -2,7 +2,9 @@
 
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::Map;
-use openstrike_formats::objects::{LAYER_SHADOW, LAYER_UPRIGHT, ObjectSet, fence_lies_flat, ground_layer, map_state, placement};
+use openstrike_formats::objects::{
+    LAYER_SHADOW, LAYER_UPRIGHT, ObjectSet, fence_lies_flat, ground_layer, map_state, placement,
+};
 use openstrike_sim::{SUBPIXEL, UnitId, World};
 
 /// One part of a map object, in screen pixels.

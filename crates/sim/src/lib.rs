@@ -217,7 +217,10 @@ pub struct CurveState {
 pub enum Order {
     Idle,
     /// Move to a cell (order 2, `0x1002d290`).
-    Move { x: i16, y: i16 },
+    Move {
+        x: i16,
+        y: i16,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -296,7 +299,10 @@ impl Unit {
 
     /// Position in 1/256 map pixel.
     pub fn position(&self) -> (i32, i32) {
-        (self.cell.0 as i32 * grid::CELL_SUB + self.sub.0 as i32, self.cell.1 as i32 * grid::CELL_SUB + self.sub.1 as i32)
+        (
+            self.cell.0 as i32 * grid::CELL_SUB + self.sub.0 as i32,
+            self.cell.1 as i32 * grid::CELL_SUB + self.sub.1 as i32,
+        )
     }
 }
 
@@ -453,7 +459,8 @@ pub struct World {
 
 impl World {
     pub fn new(units: Vec<Unit>, seed: u32) -> Self {
-        let mut world = Self { tick: 0, rng: seed, units: Vec::new(), occupancy: vec![0; grid::CELLS], seen: vec![0; grid::CELLS] };
+        let mut world =
+            Self { tick: 0, rng: seed, units: Vec::new(), occupancy: vec![0; grid::CELLS], seen: vec![0; grid::CELLS] };
         for u in units {
             motion::occupy(&mut world.occupancy, u.reservation, 1);
             world.units.push(u);
@@ -545,7 +552,9 @@ pub fn step(world: &World, rules: &Rules, commands: &[Command]) -> World {
             Command::HoldPosition { units, on } => {
                 w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_position = *on)
             }
-            Command::HoldFire { units, on } => w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_fire = *on),
+            Command::HoldFire { units, on } => {
+                w.units.iter_mut().filter(|u| units.contains(&u.id)).for_each(|u| u.hold_fire = *on)
+            }
         }
     }
     // sight (`0x10090d59`, then `0x1003e520`): the refresh, the periodic sights by phase, what sees

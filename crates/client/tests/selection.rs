@@ -1,5 +1,5 @@
 use openstrike::scene::UnitView;
-use openstrike::selection::{assign, centre, outline, recall, select, unit_at, units_in, Groups};
+use openstrike::selection::{Groups, assign, centre, outline, recall, select, unit_at, units_in};
 use openstrike_sim::UnitId;
 
 fn view(id: u32, x: i32, y: i32) -> UnitView {

@@ -61,7 +61,10 @@ fn atoi(s: &str) -> i32 {
         Some(rest) => (true, rest),
         None => (false, s.strip_prefix('+').unwrap_or(s)),
     };
-    let n = digits.bytes().take_while(u8::is_ascii_digit).fold(0i32, |n, b| n.wrapping_mul(10).wrapping_add((b - b'0') as i32));
+    let n = digits
+        .bytes()
+        .take_while(u8::is_ascii_digit)
+        .fold(0i32, |n, b| n.wrapping_mul(10).wrapping_add((b - b'0') as i32));
     if neg { -n } else { n }
 }
 
@@ -101,7 +104,11 @@ fn expand(name: &str, read: &mut dyn FnMut(&str) -> Option<Vec<u8>>, desc: &mut 
         let mut tokens = line.split(|c: char| c.is_whitespace() || c == ',').filter(|t| !t.is_empty());
         if let Some(key) = tokens.next() {
             let raw = line[key.len()..].trim().to_string();
-            desc.entries.push(Entry { key: key.to_ascii_lowercase(), values: tokens.map(str::to_string).collect(), raw });
+            desc.entries.push(Entry {
+                key: key.to_ascii_lowercase(),
+                values: tokens.map(str::to_string).collect(),
+                raw,
+            });
         }
     }
     Ok(())
@@ -122,4 +129,3 @@ pub fn unit_classes(text: &str) -> Vec<(String, String)> {
         })
         .collect()
 }
-

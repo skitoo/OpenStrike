@@ -4,13 +4,13 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use openstrike_formats::ini::Ini;
-use openstrike_formats::{circles, curves, desc, hot, interface};
 use openstrike_formats::iso::Projection;
 use openstrike_formats::map::{self, Map};
 use openstrike_formats::objects::{self, ObjectSet};
 use openstrike_formats::palette::Palette;
 use openstrike_formats::sprite::{self, Image, KIND_SHADOW};
 use openstrike_formats::sue::{Archive, Vfs};
+use openstrike_formats::{circles, curves, desc, hot, interface};
 use openstrike_sim::UnitType;
 
 use crate::mission;
@@ -157,7 +157,9 @@ fn font(vfs: &Vfs) -> Result<Vec<Option<Image>>, Error> {
     let palette = Palette::parse(&vfs.require("intr.pl")?)?;
     let frames = sprite::pck_frames(&data)?;
     let font = frames.get(11).ok_or("intrpic.dat: no frame 11")?;
-    Ok((0..=255u8).map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok())).collect())
+    Ok((0..=255u8)
+        .map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok()))
+        .collect())
 }
 
 /// See [`Assets::small_font`].
@@ -169,7 +171,9 @@ fn small_font(vfs: &Vfs) -> Result<Vec<Option<Image>>, Error> {
     let data = vfs.require("intrpic.dat")?;
     let frames = sprite::pck_frames(&data)?;
     let font = frames.get(13).ok_or("intrpic.dat: no frame 13")?;
-    Ok((0..=255u8).map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok())).collect())
+    Ok((0..=255u8)
+        .map(|c| sprite::collection_frame(font, c).ok().and_then(|f| sprite::decode(f, &palette).ok()))
+        .collect())
 }
 
 /// See [`Assets::key_names`]: the game reads `key.map` from the install's root.
@@ -212,8 +216,14 @@ fn group_digits(vfs: &Vfs) -> Result<Vec<Image>, Error> {
 pub fn unit_type(vfs: &Vfs, name: &str) -> Result<(UnitType, String, i32, String), Error> {
     let d = desc::load(&format!("units/{name}"), &mut |n| vfs.read(n).ok().flatten())?;
     let missing = |key: &str| format!("{name}: no {key} in the description");
-    let speed = (d.float("MoveSpeed", 0).ok_or_else(|| missing("MoveSpeed"))?, d.float("MoveSpeed", 1).ok_or_else(|| missing("MoveSpeed"))?);
-    let turn = (d.int("TurnDelay", 0).ok_or_else(|| missing("TurnDelay"))?, d.int("TurnDelay", 1).ok_or_else(|| missing("TurnDelay"))?);
+    let speed = (
+        d.float("MoveSpeed", 0).ok_or_else(|| missing("MoveSpeed"))?,
+        d.float("MoveSpeed", 1).ok_or_else(|| missing("MoveSpeed"))?,
+    );
+    let turn = (
+        d.int("TurnDelay", 0).ok_or_else(|| missing("TurnDelay"))?,
+        d.int("TurnDelay", 1).ok_or_else(|| missing("TurnDelay"))?,
+    );
     let mut t = UnitType::new(name, speed, turn, d.int("GunTurnDelay", 0).unwrap_or(0));
     t.ignore_mines = d.int("IgnoreMines", 0).unwrap_or(0) != 0;
     t.can_move_backward = d.int("CanMoveBackward", 0).unwrap_or(0) != 0;
@@ -280,7 +290,8 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
     let map = map::parse(&std::fs::read(map_path)?)?;
     let vfs = mount(data_dir, climate.unwrap_or(map.climate()))?;
     let object_sets = map.object_sets.iter().map(|n| object_set(&vfs, n)).collect::<Result<_, _>>()?;
-    let unit_classes: HashMap<String, String> = desc::unit_classes(&String::from_utf8_lossy(&vfs.require("units\\UNITS")?)).into_iter().collect();
+    let unit_classes: HashMap<String, String> =
+        desc::unit_classes(&String::from_utf8_lossy(&vfs.require("units\\UNITS")?)).into_iter().collect();
     let mut names: Vec<String> = Vec::new();
     for u in &map.units {
         let name = map.unit_types[u.kind as usize].to_ascii_lowercase();
@@ -322,8 +333,15 @@ pub fn load(data_dir: &Path, map_path: &Path, climate: Option<&str>, extra_vehic
         texts: interface::texts(&vfs.require("intrtext.dat")?)?,
         key_names: key_names(data_dir, &vfs)?,
         buttons: (29..=86).map(|i| Ok((i, interface_frame(&vfs, i)?))).collect::<Result<_, Error>>()?,
-        circles: circles::parse(&vfs.require("circ64.dat")?)?.into_iter().map(|c| c.iter().map(|e| (e.dx, e.dy)).collect()).collect(),
-        curves: curves::parse(&vfs.require("curvenew")?)?.0.iter().map(|c| c.iter().map(|p| (p.x, p.y)).collect()).collect(),
+        circles: circles::parse(&vfs.require("circ64.dat")?)?
+            .into_iter()
+            .map(|c| c.iter().map(|e| (e.dx, e.dy)).collect())
+            .collect(),
+        curves: curves::parse(&vfs.require("curvenew")?)?
+            .0
+            .iter()
+            .map(|c| c.iter().map(|p| (p.x, p.y)).collect())
+            .collect(),
         map,
     })
 }

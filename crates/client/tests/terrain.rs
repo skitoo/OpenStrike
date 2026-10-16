@@ -4,7 +4,9 @@ use std::path::PathBuf;
 
 use openstrike::{assets, mission, terrain};
 use openstrike_formats::map::GROUND_WATER;
-use openstrike_formats::objects::{BRIDGE_OPEN, BRIDGE_PART, BRIDGE_SIZE, FOOTPRINT_ORIGIN, FOOTPRINT_SOLID, bridge_tile};
+use openstrike_formats::objects::{
+    BRIDGE_OPEN, BRIDGE_PART, BRIDGE_SIZE, FOOTPRINT_ORIGIN, FOOTPRINT_SOLID, bridge_tile,
+};
 use openstrike_sim::{Command, Order, Rules, Unit, UnitId, World, step};
 
 fn data_dir() -> Option<PathBuf> {
@@ -32,7 +34,10 @@ fn water_and_houses_are_blocked_in_the_stored_terrain() {
         for (gy, row) in grid.iter().enumerate() {
             for (gx, v) in row.iter().enumerate() {
                 if v & FOOTPRINT_SOLID != 0 {
-                    let (tx, ty) = ((o.x as i32 >> 4) + gx as i32 - FOOTPRINT_ORIGIN, (o.y as i32 >> 4) + gy as i32 - FOOTPRINT_ORIGIN);
+                    let (tx, ty) = (
+                        (o.x as i32 >> 4) + gx as i32 - FOOTPRINT_ORIGIN,
+                        (o.y as i32 >> 4) + gy as i32 - FOOTPRINT_ORIGIN,
+                    );
                     assert!(t.quarter_blocked(tx, ty), "house tile {tx},{ty} is open");
                 }
             }
@@ -75,11 +80,23 @@ fn a_tank_crosses_the_rhine() {
     let map_path = dir.join("Maps/single/'Guard on the river Rhine'.ssm");
     let a = assets::load(&dir, &map_path, None, &["t-26"]).unwrap();
     let t26 = a.vehicles.iter().find(|v| v.name == "t-26").unwrap();
-    let rules = Rules { grid: terrain::build(&a.map), curves: a.curves.clone(), types: vec![t26.unit_type.clone()], circles: Vec::new(), sides: Vec::new() };
+    let rules = Rules {
+        grid: terrain::build(&a.map),
+        curves: a.curves.clone(),
+        types: vec![t26.unit_type.clone()],
+        circles: Vec::new(),
+        sides: Vec::new(),
+    };
     let free = |x: i16, y: i16| rules.grid.at(x as i32, y as i32) & 0x400f == 0;
-    let near = |x: i16, y: i16| (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap();
+    let near = |x: i16, y: i16| {
+        (0..10).flat_map(|d| [(x + d, y), (x - d, y), (x, y + d), (x, y - d)]).find(|&(x, y)| free(x, y)).unwrap()
+    };
     let (from, to) = (near(30, 44), near(100, 48));
-    let mut w = step(&World::new(vec![Unit::new(UnitId(1), 0, from, 0)], 0), &rules, &[Command::Move { units: vec![UnitId(1)], to }]);
+    let mut w = step(
+        &World::new(vec![Unit::new(UnitId(1), 0, from, 0)], 0),
+        &rules,
+        &[Command::Move { units: vec![UnitId(1)], to }],
+    );
     let mut seen_east_of_river = false;
     for _ in 0..20_000 {
         w = step(&w, &rules, &[]);
@@ -112,8 +129,18 @@ fn the_mission_starts_with_its_own_tanks() {
     let Some(dir) = data_dir() else { return };
     let a = assets::load(&dir, &dir.join("Maps/single/'Act of Sabotage'.ssm"), None, &[]).unwrap();
     let kinds = a.vehicles.iter().enumerate().map(|(i, v)| (v.name.clone(), i)).collect();
-    let start = mission::start(&a.map, &a.unit_classes, &kinds, &a.vehicles.iter().map(|v| v.unit_type.clone()).collect::<Vec<_>>());
-    let tanks = a.map.units.iter().filter(|u| a.unit_classes[&a.map.unit_types[u.kind as usize].to_ascii_lowercase()] == "tank").count();
+    let start = mission::start(
+        &a.map,
+        &a.unit_classes,
+        &kinds,
+        &a.vehicles.iter().map(|v| v.unit_type.clone()).collect::<Vec<_>>(),
+    );
+    let tanks = a
+        .map
+        .units
+        .iter()
+        .filter(|u| a.unit_classes[&a.map.unit_types[u.kind as usize].to_ascii_lowercase()] == "tank")
+        .count();
     assert_eq!(start.world.units.len(), tanks);
     assert_eq!(start.skipped.values().sum::<usize>() + tanks, a.map.units.len());
     // the first unit of the file (a ship gun of player 3) gets id 3 * 1024 + 1 and ends up last

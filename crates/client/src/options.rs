@@ -72,11 +72,14 @@ pub fn parse(args: impl IntoIterator<Item = String>) -> Result<Parsed, String> {
             }
             "--look-at" => {
                 let v = value(&mut args, &a)?;
-                let parsed = v.split_once(',').and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)));
+                let parsed =
+                    v.split_once(',').and_then(|(x, y)| Some((x.trim().parse().ok()?, y.trim().parse().ok()?)));
                 o.look_at = Some(parsed.ok_or_else(|| format!("--look-at expects X,Y, got {v:?}"))?);
             }
             _ if a.starts_with('-') => return Err(format!("unknown option {a:?} (see --help)")),
-            _ if !o.map.as_os_str().is_empty() => return Err(format!("only one map can be given, got {:?} and {a:?}", o.map)),
+            _ if !o.map.as_os_str().is_empty() => {
+                return Err(format!("only one map can be given, got {:?} and {a:?}", o.map));
+            }
             _ => o.map = PathBuf::from(a),
         }
     }

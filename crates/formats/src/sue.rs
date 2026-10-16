@@ -73,7 +73,8 @@ impl Archive {
         for _ in 0..count {
             let name_off = er.u32()? as usize;
             let _base = er.u32()?;
-            let entry = Entry { first_chunk: er.u32()? as usize, size: er.u32()? as usize, chunk_size: er.u32()? as usize };
+            let entry =
+                Entry { first_chunk: er.u32()? as usize, size: er.u32()? as usize, chunk_size: er.u32()? as usize };
             let name = names
                 .get(name_off..)
                 .and_then(|s| s.split(|&b| b == 0).next())

@@ -4,8 +4,8 @@
 //! i8 dx, i8 dy, u8 angle (0-255 from west, used by sector sight, `0x1004e180`).
 //! The older `circ.dat` (radius 1 to 31, 2-byte records without angle) serves old saves.
 
-use crate::reader::Reader;
 use crate::Result;
+use crate::reader::Reader;
 
 /// A ray end: offset in cells from the centre and its angle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

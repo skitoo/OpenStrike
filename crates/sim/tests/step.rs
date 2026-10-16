@@ -139,7 +139,8 @@ fn an_unreachable_goal_is_given_up() {
 fn two_units_never_share_a_cell() {
     let r = open();
     let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (20, 10), 16)];
-    let mut w = step(&World::new(units, 7), &r, &[move_to(20, 10), Command::Move { units: vec![UnitId(2)], to: (10, 10) }]);
+    let mut w =
+        step(&World::new(units, 7), &r, &[move_to(20, 10), Command::Move { units: vec![UnitId(2)], to: (10, 10) }]);
     for _ in 0..1500 {
         w = step(&w, &r, &[]);
         assert_ne!(w.units[0].cell, w.units[1].cell);
@@ -178,7 +179,11 @@ fn a_path_is_planned_the_tick_after_the_order() {
 fn a_tight_group_keeps_its_shape() {
     // 3 tanks in a row, ordered 20 cells down: each keeps its offset from the group's centre
     let r = open();
-    let units = vec![Unit::new(UnitId(1), 0, (10, 10), 0), Unit::new(UnitId(2), 0, (12, 10), 0), Unit::new(UnitId(3), 0, (14, 10), 0)];
+    let units = vec![
+        Unit::new(UnitId(1), 0, (10, 10), 0),
+        Unit::new(UnitId(2), 0, (12, 10), 0),
+        Unit::new(UnitId(3), 0, (14, 10), 0),
+    ];
     let w = World::new(units, 0);
     let members: Vec<&Unit> = w.units.iter().collect();
     assert_eq!(group_targets(&r, &w.occupancy, &members, (30, 30)), vec![(28, 30), (30, 30), (32, 30)]);
@@ -189,7 +194,11 @@ fn a_spread_group_gathers_on_every_other_cell() {
     // 30 cells apart: odd rows and columns of the slot grid are left empty, and the target's own
     // slot (15, 15) is odd, so the spiral starts on the ring around it
     let r = open();
-    let units = vec![Unit::new(UnitId(1), 0, (5, 5), 0), Unit::new(UnitId(2), 0, (40, 40), 0), Unit::new(UnitId(3), 0, (5, 40), 0)];
+    let units = vec![
+        Unit::new(UnitId(1), 0, (5, 5), 0),
+        Unit::new(UnitId(2), 0, (40, 40), 0),
+        Unit::new(UnitId(3), 0, (5, 40), 0),
+    ];
     let w = World::new(units, 0);
     let members: Vec<&Unit> = w.units.iter().collect();
     assert_eq!(group_targets(&r, &w.occupancy, &members, (30, 30)), vec![(29, 29), (31, 29), (29, 31)]);
@@ -221,6 +230,13 @@ fn halte_stops_short_of_the_goal() {
 fn hold_orders_set_the_unit_flags() {
     let w = step(&one_tank((10, 10), 0), &open(), &[Command::HoldPosition { units: vec![UnitId(1)], on: true }]);
     assert!(w.units[0].hold_position && !w.units[0].hold_fire);
-    let w = step(&w, &open(), &[Command::HoldFire { units: vec![UnitId(1)], on: true }, Command::HoldPosition { units: vec![UnitId(1)], on: false }]);
+    let w = step(
+        &w,
+        &open(),
+        &[
+            Command::HoldFire { units: vec![UnitId(1)], on: true },
+            Command::HoldPosition { units: vec![UnitId(1)], on: false },
+        ],
+    );
     assert!(!w.units[0].hold_position && w.units[0].hold_fire);
 }

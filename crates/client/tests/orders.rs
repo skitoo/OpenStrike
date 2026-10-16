@@ -1,4 +1,4 @@
-use openstrike::orders::{can, grid, hold_state, press, selection, tank, toggled, Press, ADVANCE, HALT};
+use openstrike::orders::{ADVANCE, HALT, Press, can, grid, hold_state, press, selection, tank, toggled};
 
 fn commands(c: u32) -> Vec<Option<u8>> {
     grid(c).iter().map(|b| b.map(|b| b.command)).collect()
@@ -17,7 +17,10 @@ fn a_tank_shows_advance_attack_assault_turn_and_halt() {
 
 #[test]
 fn an_immobilised_tank_can_only_attack_and_halt() {
-    assert_eq!(commands(selection([tank(true, true)])), [None, Some(0x14), None, None, None, None, None, None, Some(0xb)]);
+    assert_eq!(
+        commands(selection([tank(true, true)])),
+        [None, Some(0x14), None, None, None, None, None, None, Some(0xb)]
+    );
     assert_eq!(commands(selection([tank(true, false)])), [None, None, None, None, None, None, None, None, Some(0xb)]);
     assert_eq!(selection([]), 0);
 }

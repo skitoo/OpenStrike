@@ -17,7 +17,7 @@ fn glyphs_advance_by_their_width_and_two() {
     assert_eq!(layout("AIA", width), [(0, b'A'), (7, b'I'), (10, b'A')]);
 }
 
-use openstrike::info::{gauge, layout_centred, unit_fields, Field};
+use openstrike::info::{Field, gauge, layout_centred, unit_fields};
 
 #[test]
 fn a_unit_shows_hit_points_crew_and_its_ammunition_to_friends() {

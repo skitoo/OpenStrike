@@ -69,7 +69,12 @@ pub struct Start {
 
 /// The starting world. `classes` maps lowercase type names to their class (`UNITS`), `kinds`
 /// lowercase type names to their index in `types`, the simulation's types.
-pub fn start(map: &Map, classes: &HashMap<String, String>, kinds: &HashMap<String, usize>, types: &[UnitType]) -> Start {
+pub fn start(
+    map: &Map,
+    classes: &HashMap<String, String>,
+    kinds: &HashMap<String, usize>,
+    types: &[UnitType],
+) -> Start {
     let mut next_id: HashMap<u8, u32> = HashMap::new();
     let mut created = Vec::new();
     let mut skipped = BTreeMap::new();

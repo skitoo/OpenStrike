@@ -88,7 +88,12 @@ pub fn grid(c: u32) -> [Option<Button>; 9] {
             (0x8000, 0xc, 79, 7),
             (0x8_0000, 0x1f, 69, 0x16),
         ]),
-        first(&[(0x80, 0x17, 57, 0xe), (0x40, 0x16, 57, 0xd), (0x10_0000, 0x20, 71, 0x17), (0x200_0000, 0x23, 85, 0x6b)]),
+        first(&[
+            (0x80, 0x17, 57, 0xe),
+            (0x40, 0x16, 57, 0xd),
+            (0x10_0000, 0x20, 71, 0x17),
+            (0x200_0000, 0x23, 85, 0x6b),
+        ]),
         first(&[(0x20_0000, 0x11, 83, 0x14), (0x1_0000, 0xf, 63, 0x12), (0x2000, 0x24, 75, 5)]),
         first(&[(0x2_0000, 0x10, 65, 0x13)]),
         first(&[(4, HALT, 61, 4)]),
@@ -103,7 +108,13 @@ pub fn hold_state(flags: impl IntoIterator<Item = bool>) -> usize {
         all &= f;
         any |= f;
     }
-    if all { 0 } else if any { 1 } else { 2 }
+    if all {
+        0
+    } else if any {
+        1
+    } else {
+        2
+    }
 }
 
 /// What a press of the grid button for `command` does (`0x10080150`): HALTE acts at once, the

@@ -1,4 +1,4 @@
-use openstrike::minimap::{cell, dot, frame, origin_y, render, target, HEIGHT, ORIGIN_X, WIDTH};
+use openstrike::minimap::{HEIGHT, ORIGIN_X, WIDTH, cell, dot, frame, origin_y, render, target};
 use openstrike_formats::map::Map;
 
 fn map(size: u32) -> Map {
@@ -94,7 +94,10 @@ fn units_are_dots_at_their_cell() {
     assert_eq!(dot(&m, 11 * 32, 6 * 32)[0], (ORIGIN_X + 5, oy + 8));
     // not on the widget near the edge, cut by the rhomb's border
     assert!(dot(&m, 0, 60 * 32).is_empty());
-    assert_eq!(dot(&m, 4 * 32, 4 * 32), vec![(ORIGIN_X, oy + 4), (ORIGIN_X + 1, oy + 4), (ORIGIN_X, oy + 5), (ORIGIN_X + 1, oy + 5)]);
+    assert_eq!(
+        dot(&m, 4 * 32, 4 * 32),
+        vec![(ORIGIN_X, oy + 4), (ORIGIN_X + 1, oy + 4), (ORIGIN_X, oy + 5), (ORIGIN_X + 1, oy + 5)]
+    );
     // halved maps: two cells per pixel
     let big = map(256);
     assert_eq!(dot(&big, 21 * 32, 13 * 32)[0], (ORIGIN_X + 4, origin_y(&big) + 8));

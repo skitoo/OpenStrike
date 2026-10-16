@@ -1,4 +1,4 @@
-use openstrike_sim::grid::{Grid, CELLS, SIDE};
+use openstrike_sim::grid::{CELLS, Grid, SIDE};
 use openstrike_sim::vision::{cast, circle, refresh};
 
 fn seen_cells(seen: &[u8], bit: u8) -> Vec<(i32, i32)> {

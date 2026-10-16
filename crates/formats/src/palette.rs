@@ -85,4 +85,3 @@ pub fn blend_alpha(palette: &AlphaPalette, index: u8, background: u16) -> Option
     let scaled = (split.wrapping_mul(k) >> 5) & MASK;
     Some(((scaled >> 16 | scaled) as u16).wrapping_add(palette.colour(index)))
 }
-

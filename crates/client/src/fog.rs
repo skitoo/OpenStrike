@@ -28,12 +28,7 @@ impl Light {
 /// `(x, y)` at `x - y`, `(x + y) / 2`) and `size` pixels wide and high, over a map of `map_size`
 /// cells, `seen(x, y)` telling whether the local side sees cell `(x, y)` (`0x10071a10`; the game's
 /// grid is 80 corners wide for 800 pixels, this one as wide as the view needs).
-pub fn light(
-    view: (i32, i32),
-    size: (i32, i32),
-    map_size: (i32, i32),
-    seen: impl Fn(i32, i32) -> bool,
-) -> Light {
+pub fn light(view: (i32, i32), size: (i32, i32), map_size: (i32, i32), seen: impl Fn(i32, i32) -> bool) -> Light {
     let (vx, vy) = view;
     let cols = size.0 >> 4;
     let rows = size.1 >> 3;
@@ -42,8 +37,7 @@ pub fn light(
     let mut l = vec![LIT; stride * height];
     let s = stride as i32;
     let at = |r: i32, c: i32| (r * s + c) as usize;
-    let visible =
-        |x: i32, y: i32| x >= 4 && y >= 4 && x < map_size.0 - 4 && y < map_size.1 - 4 && seen(x, y);
+    let visible = |x: i32, y: i32| x >= 4 && y >= 4 && x < map_size.0 - 4 && y < map_size.1 - 4 && seen(x, y);
 
     // the corners on the cells' vertices
     let u1 = vy >> 3;
@@ -63,9 +57,7 @@ pub fn light(
             let i = at(row, col);
             if !visible(cx, cy) {
                 l[i] = 0;
-            } else if l[i] > EDGE
-                && !(seen(cx, cy + 1) && seen(cx + 1, cy) && seen(cx, cy - 1) && seen(cx - 1, cy))
-            {
+            } else if l[i] > EDGE && !(seen(cx, cy + 1) && seen(cx + 1, cy) && seen(cx, cy - 1) && seen(cx - 1, cy)) {
                 l[i] = EDGE;
             }
             col += 4;
@@ -95,10 +87,7 @@ pub fn light(
     while r < rows + 10 {
         let mut c = c0;
         while c < cols + 10 {
-            let sum = l[at(r - 2, c)] as u32
-                + l[at(r + 2, c)] as u32
-                + l[at(r, c + 2)] as u32
-                + l[at(r, c - 2)] as u32;
+            let sum = l[at(r - 2, c)] as u32 + l[at(r + 2, c)] as u32 + l[at(r, c + 2)] as u32 + l[at(r, c - 2)] as u32;
             l[at(r, c)] = (sum >> 2) as u8;
             c += 4;
         }
@@ -138,10 +127,7 @@ pub fn factor(light: &Light, x: i32, y: i32) -> i32 {
     let (tx, ty) = (x >> 4, y >> 3);
     let (row, col) = (ty + ORIGIN, tx + ORIGIN);
     let (tl, tr) = (light.at(row, col) as i32, light.at(row, col + 1) as i32);
-    let (bl, br) = (
-        light.at(row + 1, col) as i32,
-        light.at(row + 1, col + 1) as i32,
-    );
+    let (bl, br) = (light.at(row + 1, col) as i32, light.at(row + 1, col + 1) as i32);
     if tl == 0 && tr == 0 && bl == 0 && br == 0 {
         return 16;
     }

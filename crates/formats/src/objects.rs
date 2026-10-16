@@ -164,12 +164,21 @@ fn house_states(frame: &[u8], palette: &Palette) -> Option<Vec<Vec<Part>>> {
 /// layer 6. Four states match the four state bits of the grid (`BRIDGE_OPEN << state`).
 fn bridge_states(frame: &[u8], palette: &Palette) -> Option<Vec<Vec<Part>>> {
     let table = Reader::at(frame, 1000).ok()?.u32_vec(10).ok()?;
-    let part = |i: usize, layer: u8| sprite_at(frame, table[i] as usize + 1000, palette).map(|image| Part { layer, image, depth: 0 });
+    let part = |i: usize, layer: u8| {
+        sprite_at(frame, table[i] as usize + 1000, palette).map(|image| Part { layer, image, depth: 0 })
+    };
     let ground = ground_layer("most");
     let abutments = [part(0, ground), part(1, LAYER_SHADOW)];
     Some(
         (0..4)
-            .map(|s| abutments.iter().cloned().chain([part(2 + 2 * s, ground), part(3 + 2 * s, LAYER_SHADOW)]).flatten().collect())
+            .map(|s| {
+                abutments
+                    .iter()
+                    .cloned()
+                    .chain([part(2 + 2 * s, ground), part(3 + 2 * s, LAYER_SHADOW)])
+                    .flatten()
+                    .collect()
+            })
             .collect(),
     )
 }
@@ -270,8 +279,10 @@ pub fn load_set(name: &str, rs2: &[u8], palettes: &[Palette]) -> Result<ObjectSe
         return Err(Error::Invalid(format!("object set {name} needs a palette")));
     }
     let raw_frames = sprite::rs2_frames(rs2)?;
-    let footprints = raw_frames.iter().map(|f| if set == "dom" && !f.is_empty() { house_footprint(f) } else { None }).collect();
-    let bridges = raw_frames.iter().map(|f| if set == "most" && !f.is_empty() { bridge_grid(f) } else { None }).collect();
+    let footprints =
+        raw_frames.iter().map(|f| if set == "dom" && !f.is_empty() { house_footprint(f) } else { None }).collect();
+    let bridges =
+        raw_frames.iter().map(|f| if set == "most" && !f.is_empty() { bridge_grid(f) } else { None }).collect();
     let ground = ground_layer(&set);
     let frames = raw_frames
         .into_iter()

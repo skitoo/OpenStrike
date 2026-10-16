@@ -51,7 +51,13 @@ pub fn units_in(units: &[UnitView], a: (f32, f32), b: (f32, f32)) -> Vec<UnitId>
 
 /// New selection after a left-button release: a click picks one unit (or none), a drag picks a box.
 /// With `add`, the result is merged into the current selection instead of replacing it.
-pub fn select(current: &[UnitId], units: &[UnitView], press: (f32, f32), release: (f32, f32), add: bool) -> Vec<UnitId> {
+pub fn select(
+    current: &[UnitId],
+    units: &[UnitView],
+    press: (f32, f32),
+    release: (f32, f32),
+    add: bool,
+) -> Vec<UnitId> {
     let dragged = (release.0 - press.0).abs().max((release.1 - press.1).abs()) >= CLICK_SLOP;
     let picked = if dragged { units_in(units, press, release) } else { unit_at(units, release).into_iter().collect() };
     let mut out = if add { current.to_vec() } else { Vec::new() };

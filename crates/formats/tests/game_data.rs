@@ -3,12 +3,17 @@
 
 use std::path::PathBuf;
 
-use openstrike_formats::{map, palette::{AlphaPalette, Palette}, sprite, sue::Archive};
+use openstrike_formats::{
+    map,
+    palette::{AlphaPalette, Palette},
+    sprite,
+    sue::Archive,
+};
 
 fn data_dir() -> Option<PathBuf> {
-    let dir = std::env::var_os("OPENSTRIKE_DATA").map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/SuddenStrikeGold")
-    });
+    let dir = std::env::var_os("OPENSTRIKE_DATA")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../data/SuddenStrikeGold"));
     dir.join("units.sue").exists().then_some(dir).or_else(|| {
         eprintln!("game data not found, skipping");
         None
@@ -94,8 +99,14 @@ fn every_object_of_every_map_has_its_sprites() {
         for o in &m.objects {
             let name = m.object_sets[o.set as usize].to_ascii_lowercase();
             let set = sets.entry((climate.to_string(), name.clone())).or_insert_with(|| {
-                let Some(rs2) = vfs.read(&format!("{}.rs2", objects::file_stem(&name))).unwrap() else { return Default::default() };
-                let pals = vfs.read(&format!("{name}.pl")).unwrap().map(|p| Palette::parse_many(&p).unwrap()).unwrap_or_default();
+                let Some(rs2) = vfs.read(&format!("{}.rs2", objects::file_stem(&name))).unwrap() else {
+                    return Default::default();
+                };
+                let pals = vfs
+                    .read(&format!("{name}.pl"))
+                    .unwrap()
+                    .map(|p| Palette::parse_many(&p).unwrap())
+                    .unwrap_or_default();
                 objects::load_set(&name, &rs2, &pals).unwrap()
             });
             if objects::placement(&name, o.x, o.y, m.width, m.height).is_none() {
@@ -108,7 +119,10 @@ fn every_object_of_every_map_has_its_sprites() {
                 Some(f) if !f.parts(state).is_empty() => drawn += 1,
                 _ => {
                     if missing.len() < 20 {
-                        missing.push(format!("{climate} {name} frame {frame} state {state} ({})", path.file_name().unwrap().to_string_lossy()));
+                        missing.push(format!(
+                            "{climate} {name} frame {frame} state {state} ({})",
+                            path.file_name().unwrap().to_string_lossy()
+                        ));
                     }
                 }
             }
@@ -151,7 +165,10 @@ fn counted_unit_sprites_decode() {
     for name in ["shot", "str"] {
         let pck = units.read(&format!("{name}.pck")).unwrap().unwrap();
         let frames = sprite::pck_frames(&pck).unwrap();
-        assert!(frames.iter().all(|f| f.is_empty() || sprite::frame_len(f, 0) == Some(f.len())), "{name}: frames do not parse");
+        assert!(
+            frames.iter().all(|f| f.is_empty() || sprite::frame_len(f, 0) == Some(f.len())),
+            "{name}: frames do not parse"
+        );
     }
 }
 
@@ -265,7 +282,8 @@ fn every_effect_alpha_frame_decodes_with_its_palette() {
     for name in names.iter().filter(|n| n.to_ascii_lowercase().ends_with(".ani")) {
         let data = animats.read(name).unwrap().unwrap();
         let stem = &name[..name.len() - 4];
-        let alpha: Vec<&[u8]> = ca_frames(&data).into_iter().filter(|f| sprite::frame_kind(f) == Some(sprite::KIND_ALPHA)).collect();
+        let alpha: Vec<&[u8]> =
+            ca_frames(&data).into_iter().filter(|f| sprite::frame_kind(f) == Some(sprite::KIND_ALPHA)).collect();
         if alpha.is_empty() {
             continue;
         }
@@ -298,8 +316,8 @@ fn maps_carry_their_units() {
 fn every_unit_type_has_a_class() {
     let Some(dir) = data_dir() else { return };
     let desc = Archive::parse(std::fs::read(dir.join("desc_common.sue")).unwrap()).unwrap();
-    let classes = openstrike_formats::desc::unit_classes(&String::from_utf8_lossy(&desc.read("units\\UNITS").unwrap().unwrap()));
+    let classes =
+        openstrike_formats::desc::unit_classes(&String::from_utf8_lossy(&desc.read("units\\UNITS").unwrap().unwrap()));
     assert!(classes.contains(&("t-26".into(), "tank".into())));
     assert!(classes.contains(&("flak88".into(), "szenit".into())));
 }
-

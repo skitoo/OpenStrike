@@ -40,7 +40,9 @@ impl Ini {
     pub fn data_paths(&self, scheme: u32) -> Vec<String> {
         (0..32)
             .map_while(|i| self.get("Game", &format!("DataPathScm{scheme}_{i}")).filter(|v| !v.is_empty()))
-            .flat_map(|list| list.split(';').map(str::trim).filter(|n| !n.is_empty()).map(String::from).collect::<Vec<_>>())
+            .flat_map(|list| {
+                list.split(';').map(str::trim).filter(|n| !n.is_empty()).map(String::from).collect::<Vec<_>>()
+            })
             .collect()
     }
 }

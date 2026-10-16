@@ -54,7 +54,8 @@ impl Grid {
         }
         for y in 0..height {
             for x in 0..width {
-                let edge = x < BORDER_CELLS || y < BORDER_CELLS || x >= width - BORDER_CELLS || y >= height - BORDER_CELLS;
+                let edge =
+                    x < BORDER_CELLS || y < BORDER_CELLS || x >= width - BORDER_CELLS || y >= height - BORDER_CELLS;
                 if edge {
                     let f = &mut flags[(y * SIDE + x) as usize];
                     *f = (*f & 0xc000_1fff) | BORDER | QUARTERS;

@@ -276,4 +276,3 @@ pub fn decode_alpha(frame: &[u8], palette: &AlphaPalette) -> Result<Image> {
     }
     Ok(Image { anchor: (x0, y0), width: w as u32, height: h as u32, rgba })
 }
-

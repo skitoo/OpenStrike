@@ -100,7 +100,9 @@ fn can_enter(rules: &Rules, occupancy: &[u32], unit: &Unit, x: i32, y: i32, dir:
     }
     if dir & 1 != 0 {
         let k = (dir >> 1) as usize;
-        if rules.grid.at(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0 || rules.grid.at(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0 {
+        if rules.grid.at(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0
+            || rules.grid.at(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0
+        {
             return false;
         }
         if occupied(nx, y) & SIDE_X_OCCUPIED[k] != 0 || occupied(x, ny) & SIDE_Y_OCCUPIED[k] != 0 {

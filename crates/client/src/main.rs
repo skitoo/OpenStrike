@@ -1,7 +1,6 @@
 //! OpenStrike: the imperative shell. It reads devices into plain values, feeds commands to the
 //! pure simulation at a fixed rate, and draws the result. No game logic lives here.
 
-
 use std::collections::HashMap;
 
 use openstrike_formats::rhomb::{Rect, rasterize_ground};
@@ -12,10 +11,10 @@ use raylib::prelude::*;
 
 use openstrike::assets;
 use openstrike::camera::{self, Camera, CameraInput};
-use openstrike::scene::{self, ObjectPart, UnitView};
 use openstrike::chunks::{self, CHUNK, MAX_NEW_PER_FRAME};
-use openstrike::{fog, info, minimap, mission, orders};
 use openstrike::options::{self, Options, Parsed};
+use openstrike::scene::{self, ObjectPart, UnitView};
+use openstrike::{fog, info, minimap, mission, orders};
 use openstrike::{selection, status, terrain};
 
 /// The orders grid keys, `key_00`-`key_22` of `key.map`, by place: A Z E / Q S D / W X C on the
@@ -202,7 +201,8 @@ struct SpriteTexture {
 
 fn upload_sprite(rl: &mut RaylibHandle, thread: &RaylibThread, s: &Sprite) -> SpriteTexture {
     // an empty sprite still gets a 1x1 transparent texture, so that part indices stay aligned
-    let (w, h, rgba) = if s.width == 0 || s.height == 0 { (1, 1, &[0u8; 4][..]) } else { (s.width, s.height, &s.rgba[..]) };
+    let (w, h, rgba) =
+        if s.width == 0 || s.height == 0 { (1, 1, &[0u8; 4][..]) } else { (s.width, s.height, &s.rgba[..]) };
     SpriteTexture { anchor: s.anchor, size: (w as i32, h as i32), texture: upload(rl, thread, w, h, rgba) }
 }
 
@@ -339,11 +339,21 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
     let panel = upload_sprite(&mut rl, &thread, &assets.panel);
     let info_bar = upload_sprite(&mut rl, &thread, &assets.info_bar);
     let info_icons: Vec<SpriteTexture> = assets.info_icons.iter().map(|i| upload_sprite(&mut rl, &thread, i)).collect();
-    let small_font: Vec<Option<SpriteTexture>> = assets.small_font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
-    let font: Vec<Option<SpriteTexture>> = assets.font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
-    let buttons: HashMap<usize, SpriteTexture> = assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
-    let group_digits: Vec<SpriteTexture> = assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
-    let mut minimap_texture = upload(&mut rl, &thread, minimap::WIDTH as u32, minimap::HEIGHT as u32, &[0; (minimap::WIDTH * minimap::HEIGHT * 4) as usize]);
+    let small_font: Vec<Option<SpriteTexture>> =
+        assets.small_font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
+    let font: Vec<Option<SpriteTexture>> =
+        assets.font.iter().map(|g| g.as_ref().map(|g| upload_sprite(&mut rl, &thread, g))).collect();
+    let buttons: HashMap<usize, SpriteTexture> =
+        assets.buttons.iter().map(|(&i, b)| (i, upload_sprite(&mut rl, &thread, b))).collect();
+    let group_digits: Vec<SpriteTexture> =
+        assets.group_digits.iter().map(|g| upload_sprite(&mut rl, &thread, g)).collect();
+    let mut minimap_texture = upload(
+        &mut rl,
+        &thread,
+        minimap::WIDTH as u32,
+        minimap::HEIGHT as u32,
+        &[0; (minimap::WIDTH * minimap::HEIGHT * 4) as usize],
+    );
     // the tick the minimap was last drawn for
     let mut minimap_tick = None;
 
@@ -401,12 +411,14 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         let ui_scale = ((screen.0 / 800.0).min(screen.1 / 600.0).floor() as i32).max(1);
         let panel_origin = (0, screen.1 as i32 - minimap::PANEL_SIZE.1 * ui_scale);
         // the information bar, in panel pixels
-        let bar_origin = (info::BAR_RIGHT + 1 - assets.info_bar.width as i32, minimap::PANEL_SIZE.1 - assets.info_bar.height as i32);
+        let bar_origin =
+            (info::BAR_RIGHT + 1 - assets.info_bar.width as i32, minimap::PANEL_SIZE.1 - assets.info_bar.height as i32);
         let on_panel = |x: f32, y: f32| {
             let (px, py) = ((x as i32 - panel_origin.0) / ui_scale, (y as i32 - panel_origin.1) / ui_scale);
             // the panel, or the information bar in its notch
             let bar = px >= bar_origin.0 && px <= info::BAR_RIGHT && py >= bar_origin.1;
-            (py >= 0 && py < minimap::PANEL_SIZE.1 && px >= 0 && (px < minimap::PANEL_SIZE.0 || bar)).then_some((px, py))
+            (py >= 0 && py < minimap::PANEL_SIZE.1 && px >= 0 && (px < minimap::PANEL_SIZE.0 || bar))
+                .then_some((px, py))
         };
         let mouse_on_panel = on_panel(mouse.x, mouse.y);
         if let Some((px, py)) = mouse_on_panel
@@ -437,7 +449,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 b.filter(|_| in_record(assets.layout[orders::GRID_RECORD + place], p)).map(|b| b.text)
             });
             let hold_text = (0..2).find_map(|k| {
-                (capabilities & (1 << k) != 0 && in_record(assets.layout[orders::HOLD_RECORDS[k]], p)).then_some(info::HOLD_TEXTS[k])
+                (capabilities & (1 << k) != 0 && in_record(assets.layout[orders::HOLD_RECORDS[k]], p))
+                    .then_some(info::HOLD_TEXTS[k])
             });
             if let Some(t) = grid_text.or(hold_text).and_then(|t| assets.texts.get(t)) {
                 info_text = Some((info::expand(t, &assets.key_names), Default::default(), rl.get_time()));
@@ -453,7 +466,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             info_text = Some((assets.vehicles[u.kind].title.clone(), fields, rl.get_time()));
         }
         let clicked = |r: usize| {
-            rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT) && mouse_on_panel.is_some_and(|p| in_record(assets.layout[r], p))
+            rl.is_mouse_button_pressed(MouseButton::MOUSE_BUTTON_LEFT)
+                && mouse_on_panel.is_some_and(|p| in_record(assets.layout[r], p))
         };
         let mut pressed: Vec<u8> = Vec::new();
         for (place, button) in grid.iter().enumerate() {
@@ -463,7 +477,11 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 pressed.push(b.command);
             }
         }
-        for (k, (bit, command)) in [(orders::can::HOLD_POSITION, orders::HOLD_POSITION), (orders::can::HOLD_FIRE, orders::HOLD_FIRE)].into_iter().enumerate() {
+        for (k, (bit, command)) in
+            [(orders::can::HOLD_POSITION, orders::HOLD_POSITION), (orders::can::HOLD_FIRE, orders::HOLD_FIRE)]
+                .into_iter()
+                .enumerate()
+        {
             if capabilities & bit != 0 && (rl.is_key_pressed(HOLD_KEYS[k]) || clicked(orders::HOLD_RECORDS[k])) {
                 pressed.push(command);
             }
@@ -471,7 +489,9 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         for command in pressed {
             let units = selected.clone();
             match command {
-                orders::HOLD_POSITION => pending.push(Command::HoldPosition { units, on: orders::toggled(hold_states[0]) }),
+                orders::HOLD_POSITION => {
+                    pending.push(Command::HoldPosition { units, on: orders::toggled(hold_states[0]) })
+                }
                 orders::HOLD_FIRE => pending.push(Command::HoldFire { units, on: orders::toggled(hold_states[1]) }),
                 c => match orders::press(c, armed) {
                     orders::Press::Halt => pending.push(Command::Stop { units }),
@@ -521,10 +541,18 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 selection::assign(&mut groups, &ids, &selected, g, shift);
                 continue;
             }
-            selected = selection::recall(&scene::seen_units(&world, &proj, local_bit), &selected, &groups, g, shift, mission::HUMAN_PLAYER);
+            selected = selection::recall(
+                &scene::seen_units(&world, &proj, local_bit),
+                &selected,
+                &groups,
+                g,
+                shift,
+                mission::HUMAN_PLAYER,
+            );
             let now = rl.get_time();
             if last_recall.is_some_and(|(last, at)| last == g && now - at < selection::RECALL_TWICE as f64) {
-                let cells: Vec<(i16, i16)> = world.units.iter().filter(|u| selected.contains(&u.id)).map(|u| u.cell).collect();
+                let cells: Vec<(i16, i16)> =
+                    world.units.iter().filter(|u| selected.contains(&u.id)).map(|u| u.cell).collect();
                 if let Some((x, y)) = selection::centre(&cells) {
                     let (sx, sy) = proj.to_screen(x, y);
                     cam.x = sx as f32 - screen.0 / 2.0 / cam.zoom;
@@ -548,8 +576,11 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
         let view = view_rect(&cam, screen);
         // drop the ground chunks far from the view, then rasterise a few missing ones, nearest first
         ground.retain(|&c, _| chunks::keep(c, view));
-        let missing: Vec<(i32, i32)> =
-            chunks::visible(view, (screen_w, screen_h)).into_iter().filter(|c| !ground.contains_key(c)).take(MAX_NEW_PER_FRAME).collect();
+        let missing: Vec<(i32, i32)> = chunks::visible(view, (screen_w, screen_h))
+            .into_iter()
+            .filter(|c| !ground.contains_key(c))
+            .take(MAX_NEW_PER_FRAME)
+            .collect();
         for (cx, cy) in missing {
             let rect = Rect { x: cx * CHUNK, y: cy * CHUNK, w: CHUNK, h: CHUNK };
             let rgba = rasterize_ground(&assets.map, &assets.rhombs, &assets.rhomb_palettes, rect);
@@ -558,10 +589,13 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
 
         let (sw, sh) = (screen.0 as i32, screen.1 as i32);
         if targets.as_ref().is_none_or(|t| t[0].texture.width != sw || t[0].texture.height != sh) {
-            targets = Some(std::array::from_fn(|_| rl.load_render_texture(&thread, sw as u32, sh as u32).expect("render target")));
+            targets = Some(std::array::from_fn(|_| {
+                rl.load_render_texture(&thread, sw as u32, sh as u32).expect("render target")
+            }));
         }
         let [scene, composed, map_mask, depth, unit_mask, blank] = targets.as_mut().unwrap();
-        let camera2d = Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
+        let camera2d =
+            Camera2D { offset: Vector2::zero(), target: Vector2::new(cam.x, cam.y), rotation: 0.0, zoom: cam.zoom };
         let part = |p: &ObjectPart| &part_textures[&(p.set, p.frame, p.state)][p.part];
         let source = Rectangle::new(0.0, 0.0, sw as f32, -(sh as f32));
         {
@@ -601,7 +635,8 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 draw_sprite(&mut m, part(p), p.screen, view);
             }
         }
-        let tint = |u: &UnitView| depth_tint(u.depth(), scene::see_through(selected.contains(&u.id), u.screen, mouse_screen));
+        let tint =
+            |u: &UnitView| depth_tint(u.depth(), scene::see_through(selected.contains(&u.id), u.screen, mouse_screen));
         // map shadows applied, upright objects, then the units' first pass: their tracks
         {
             let mut t = rl.begin_texture_mode(&thread, composed);
@@ -686,7 +721,9 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             light_texture.as_mut().unwrap().update_texture(&light.corners).expect("light size");
         }
         if minimap_tick != Some(world.tick) {
-            minimap_texture.update_texture(&minimap::render(&assets.map, |x, y| world.sees(local_side, x, y))).expect("minimap size");
+            minimap_texture
+                .update_texture(&minimap::render(&assets.map, |x, y| world.sees(local_side, x, y)))
+                .expect("minimap size");
             minimap_tick = Some(world.tick);
         }
         let mut d = rl.begin_drawing(&thread);
@@ -699,7 +736,12 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             unsafe {
                 raylib::ffi::SetShaderValueTexture(raw, fog_light_loc, **tex);
                 let view = [cam.zoom, sh as f32, 0.0];
-                raylib::ffi::SetShaderValue(raw, fog_view_loc, view.as_ptr().cast(), raylib::ffi::ShaderUniformDataType::SHADER_UNIFORM_VEC3 as i32);
+                raylib::ffi::SetShaderValue(
+                    raw,
+                    fog_view_loc,
+                    view.as_ptr().cast(),
+                    raylib::ffi::ShaderUniformDataType::SHADER_UNIFORM_VEC3 as i32,
+                );
             }
             f.draw_texture_rec(&*scene, source, Vector2::zero(), Color::WHITE);
         }
@@ -740,13 +782,16 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             }
         }
         if let Some(start) = press {
-            let on_screen = |p: (f32, f32)| (((p.0 - cam.x) * cam.zoom).floor() as i32, ((p.1 - cam.y) * cam.zoom).floor() as i32);
+            let on_screen =
+                |p: (f32, f32)| (((p.0 - cam.x) * cam.zoom).floor() as i32, ((p.1 - cam.y) * cam.zoom).floor() as i32);
             let (x, y, w, h) = selection::outline(on_screen(start), (mouse.x as i32, mouse.y as i32));
             let [r, g, b] = assets.user_colours.colours[selection::RECT_COLOUR];
             d.draw_rectangle_lines(x, y, w, h, Color::new(r, g, b, 255));
         }
         {
-            let at = |x: i32, y: i32| Vector2::new((panel_origin.0 + x * ui_scale) as f32, (panel_origin.1 + y * ui_scale) as f32);
+            let at = |x: i32, y: i32| {
+                Vector2::new((panel_origin.0 + x * ui_scale) as f32, (panel_origin.1 + y * ui_scale) as f32)
+            };
             let s = ui_scale as f32;
             d.draw_texture_ex(&panel.texture, at(panel.anchor.0, panel.anchor.1), 0.0, s, Color::WHITE);
             d.draw_texture_ex(&minimap_texture, at(0, 0), 0.0, s, Color::WHITE);
@@ -776,14 +821,26 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                     let Some(field) = field else { continue };
                     let icon = &info_icons[i];
                     let r = bar(2 * i + 3);
-                    d.draw_texture_ex(&icon.texture, at(bar_origin.0 + r[0] + icon.anchor.0, bar_origin.1 + r[1] + icon.anchor.1), 0.0, s, Color::WHITE);
+                    d.draw_texture_ex(
+                        &icon.texture,
+                        at(bar_origin.0 + r[0] + icon.anchor.0, bar_origin.1 + r[1] + icon.anchor.1),
+                        0.0,
+                        s,
+                        Color::WHITE,
+                    );
                     let g = bar(2 * i + 4);
                     let (width, height) = (g[2] - g[0] + 1, g[3] - g[1] + 1);
                     let mut gauge = |percent: i32, colour: usize| {
                         let len = info::gauge(width, percent);
                         let [r, gr, b] = assets.user_colours.colours[colour];
                         let p = at(bar_origin.0 + g[0], bar_origin.1 + g[1]);
-                        d.draw_rectangle(p.x as i32, p.y as i32, len * ui_scale, height * ui_scale, Color::new(r, gr, b, 255));
+                        d.draw_rectangle(
+                            p.x as i32,
+                            p.y as i32,
+                            len * ui_scale,
+                            height * ui_scale,
+                            Color::new(r, gr, b, 255),
+                        );
                     };
                     gauge(field.percent, info::GAUGE_COLOURS[i]);
                     if let Some(under) = field.under {
@@ -801,7 +858,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
                 let width = |c: u8| font[c as usize].as_ref().map_or(0, |g| g.size.0);
                 for (x, c) in info::layout(text, width) {
                     if let Some(g) = &font[c as usize] {
-                        let (gx, gy) = (bar_origin.0 + info::TEXT_AT.0 + x + g.anchor.0, bar_origin.1 + info::TEXT_AT.1 + g.anchor.1);
+                        let (gx, gy) = (
+                            bar_origin.0 + info::TEXT_AT.0 + x + g.anchor.0,
+                            bar_origin.1 + info::TEXT_AT.1 + g.anchor.1,
+                        );
                         d.draw_texture_ex(&g.texture, at(gx, gy), 0.0, s, Color::WHITE);
                     }
                 }
@@ -817,7 +877,10 @@ fn run(opts: &Options) -> Result<(), Box<dyn std::error::Error>> {
             // in the order of the game's unit list, so the last one wins a shared pixel
             for u in world.units.iter().filter(|u| u.seen_by & local_bit != 0) {
                 let (x, y) = u.position();
-                let Some(&[r, g, b]) = assets.user_colours.colours.get(minimap::PLAYER_COLOURS + u.player as usize) else { continue };
+                let Some(&[r, g, b]) = assets.user_colours.colours.get(minimap::PLAYER_COLOURS + u.player as usize)
+                else {
+                    continue;
+                };
                 for (px, py) in minimap::dot(&assets.map, x >> 8, y >> 8) {
                     let p = at(px, py);
                     d.draw_rectangle(p.x as i32, p.y as i32, ui_scale, ui_scale, Color::new(r, g, b, 255));
@@ -858,7 +921,8 @@ fn draw_blocked<D: RaylibDraw>(d: &mut D, grid: &Grid, proj: &openstrike_formats
                 let (sx, sy) = proj.to_screen(x * QUARTER, y * QUARTER);
                 Vector2::new(sx as f32, sy as f32)
             };
-            let (top, right, bottom, left) = (corner(tx, ty), corner(tx + 1, ty), corner(tx + 1, ty + 1), corner(tx, ty + 1));
+            let (top, right, bottom, left) =
+                (corner(tx, ty), corner(tx + 1, ty), corner(tx + 1, ty + 1), corner(tx, ty + 1));
             if !overlaps(view, left.x as i32, top.y as i32, (right.x - left.x) as i32, (bottom.y - top.y) as i32) {
                 continue;
             }

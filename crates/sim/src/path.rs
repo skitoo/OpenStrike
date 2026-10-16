@@ -12,7 +12,9 @@
 //! keeps the second path only if it is not much worse; otherwise the unit waits and tries again.
 
 use crate::fmath::sqrt;
-use crate::grid::{self, BORDER, DIRS, Grid, NO_VEHICLES, QUARTERS, SIDE, SIDE_X_QUARTERS, SIDE_Y_QUARTERS, dir_of_signs};
+use crate::grid::{
+    self, BORDER, DIRS, Grid, NO_VEHICLES, QUARTERS, SIDE, SIDE_X_QUARTERS, SIDE_Y_QUARTERS, dir_of_signs,
+};
 use crate::{PathState, PathStatus, lcg};
 
 /// Occupancy masks of the side cells for a diagonal step (`0x100b222c`, `0x100b2230`).
@@ -84,11 +86,14 @@ impl Env<'_> {
         }
         if dir & 1 != 0 {
             let k = (dir >> 1) as usize;
-            if self.flags(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0 || self.flags(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0 {
+            if self.flags(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0
+                || self.flags(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0
+            {
                 return false;
             }
             if self.avoid_units
-                && (self.mark(nx, y) & SIDE_X_QUARTERS[k] as u8 != 0 || self.mark(x, ny) & SIDE_Y_QUARTERS[k] as u8 != 0)
+                && (self.mark(nx, y) & SIDE_X_QUARTERS[k] as u8 != 0
+                    || self.mark(x, ny) & SIDE_Y_QUARTERS[k] as u8 != 0)
             {
                 return false;
             }
@@ -106,10 +111,14 @@ impl Env<'_> {
         }
         if dir & 1 != 0 {
             let k = (dir >> 1) as usize;
-            if self.flags(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0 || self.flags(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0 {
+            if self.flags(nx, y) & SIDE_X_QUARTERS[k] & QUARTERS != 0
+                || self.flags(x, ny) & SIDE_Y_QUARTERS[k] & QUARTERS != 0
+            {
                 return false;
             }
-            if self.avoid_units && (self.occupied(nx, y) & SIDE_X_OCCUPIED[k] != 0 || self.occupied(x, ny) & SIDE_Y_OCCUPIED[k] != 0) {
+            if self.avoid_units
+                && (self.occupied(nx, y) & SIDE_X_OCCUPIED[k] != 0 || self.occupied(x, ny) & SIDE_Y_OCCUPIED[k] != 0)
+            {
                 return false;
             }
         }
@@ -173,7 +182,8 @@ impl Tables {
     }
 
     fn reach(&mut self, x: i32, y: i32) {
-        let (row, col, sum, diff) = ((y & 255) as usize, (x & 255) as usize, ((x + y) & 511) as usize, ((x - y + 256) & 511) as usize);
+        let (row, col, sum, diff) =
+            ((y & 255) as usize, (x & 255) as usize, ((x + y) & 511) as usize, ((x - y + 256) & 511) as usize);
         self.min_x_row[row] = self.min_x_row[row].min(x);
         self.max_x_row[row] = self.max_x_row[row].max(x);
         self.min_y_col[col] = self.min_y_col[col].min(y);
@@ -250,7 +260,14 @@ pub(crate) fn search(env: &Env, path: &mut PathState, sx: i32, sy: i32, gx: i32,
     let (mut bx, mut by) = (sx, sy);
     tables.dist[t(sx, sy)] = 2;
     tables.reach(sx, sy);
-    ring.push_back(Walker { x: sx, y: sy, dir: dir_of_signs(gx - sx, gy - sy), dist: 2, mode: 0, label: tables.line[t(sx, sy)] as i32 });
+    ring.push_back(Walker {
+        x: sx,
+        y: sy,
+        dir: dir_of_signs(gx - sx, gy - sy),
+        dist: 2,
+        mode: 0,
+        label: tables.line[t(sx, sy)] as i32,
+    });
     loop {
         let w = ring.pop();
         if w.dist < MAX_DIST {
@@ -323,7 +340,8 @@ fn head_for_goal(env: &Env, tables: &mut Tables, ring: &mut Ring, w: Walker, gx:
 
 fn follow_wall(env: &Env, tables: &mut Tables, ring: &mut Ring, w: Walker) {
     // mode 1 starts back towards the wall and turns clockwise, mode 2 the other way
-    let (mut dir, bit, turn) = if w.mode == 1 { (w.dir.wrapping_sub(3) & 7, 0, 1u8) } else { ((w.dir + 3) & 7, 8, 7u8) };
+    let (mut dir, bit, turn) =
+        if w.mode == 1 { (w.dir.wrapping_sub(3) & 7, 0, 1u8) } else { ((w.dir + 3) & 7, 8, 7u8) };
     let (dx, dy) = DIRS[dir as usize];
     // the border test of this step reads the cell table transposed, as the game does
     if env.flags_linear((w.x + dx) * SIDE + (w.y + dy)) & BORDER != 0 {
@@ -427,7 +445,13 @@ fn back_step(env: &Env, tables: &Tables, cx: i32, cy: i32) -> (i32, i32) {
 
 /// Plan a path for a unit at `(cx, cy)` going to `(tx, ty)` (`0x10067080`). Returns false when the
 /// order has to be given up.
-pub(crate) fn plan(env: &mut Env, path: &mut PathState, rng: &mut u32, (cx, cy): (i32, i32), (tx, ty): (i32, i32)) -> bool {
+pub(crate) fn plan(
+    env: &mut Env,
+    path: &mut PathState,
+    rng: &mut u32,
+    (cx, cy): (i32, i32),
+    (tx, ty): (i32, i32),
+) -> bool {
     *rng = lcg(*rng);
     let random = (*rng >> 16) as u8;
     env.avoid_units = true;
@@ -448,7 +472,8 @@ pub(crate) fn plan(env: &mut Env, path: &mut PathState, rng: &mut u32, (cx, cy):
             return false;
         }
         path.cost = found.cost as i32;
-        path.ratio = if path.cost != 0 { (straight - sqrt(found.dist2 as f64) + 6.0) / (found.cost + 6.0) } else { 0.0 };
+        path.ratio =
+            if path.cost != 0 { (straight - sqrt(found.dist2 as f64) + 6.0) / (found.cost + 6.0) } else { 0.0 };
     }
     match next {
         None => path.blocked_ticks = 0,
@@ -469,7 +494,8 @@ pub(crate) fn plan(env: &mut Env, path: &mut PathState, rng: &mut u32, (cx, cy):
     let found = search(env, path, cx, cy, tx, ty);
     env.avoid_units = false;
     let length_ratio = (path.cost as f64 + 32.0) / (found.cost + 32.0);
-    let gain = if found.cost as i32 != 0 { (straight - sqrt(found.dist2 as f64) + 6.0) / (found.cost + 6.0) } else { 0.0 };
+    let gain =
+        if found.cost as i32 != 0 { (straight - sqrt(found.dist2 as f64) + 6.0) / (found.cost + 6.0) } else { 0.0 };
     if path.index != path.end && length_ratio >= 0.5 && gain >= path.ratio * 0.5 {
         path.status = PathStatus::Ready;
         path.retries = 0;
