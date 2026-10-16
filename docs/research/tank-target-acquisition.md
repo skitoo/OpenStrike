@@ -16,6 +16,20 @@ for veterans (`+0x1a & 0xc000`: at least `0xccd`, plus half, capped at `0x8000`)
 `docs/original-code.md`. A pair `a,b` in a description is stored as `a` and `b - a` and read as
 `a + (b - a) * crew >> 15`.
 
+**Vtable.** Every slot below is the tank vtable **`0x100a8d24`**, the one the tank factory `0x10042fa0`
+installs. `docs/original-code.md` calls `0x100a83f0` the tank vtable; another ticket found that it is
+the apc's. Each slot used here was checked in both tables.
+
+- Identical in both: `+0x1c`, `+0x20`, `+0x24`, `+0x28`, `+0x58`, `+0x80`-`+0x90`, `+0xb0`, `+0xc0`,
+  `+0xc8`-`+0xd0`, `+0xec`-`+0xf4`, `+0x10c`, `+0x11c`-`+0x128`, `+0x144`, `+0x148`, `+0x160`,
+  `+0x170`-`+0x17c`, `+0x1c4`, `+0x1c8`, `+0x1d0`, `+0x1d4`, `+0x1e4`, `+0x1e8`, `+0x2a8`-`+0x2bc`.
+- Different for the tank:
+  - `+0x10` capabilities = `0x10010510`;
+  - `+0x14` right-click bits = `0x10011ec0`;
+  - `+0x18` = `0x100101f0`;
+  - `+0xc4` idle = `0x1000f6f0`. The apc's `0x10013800` adds an unload step first.
+  - `+0x1a8` update = `0x10010b20`, with no crew step.
+
 ## Answer in brief
 
 - A tank looks for targets inside its current order handler, through vtable `+0x2bc` (`0x10010c70`). It
@@ -225,9 +239,9 @@ jump table `0x10032870` to a vtable entry. It clears `+0x25`, `+0x27` and `+0x29
 | 0x4f pivot | `+0x160` `0x10023d80` | order 0x13, `+0x25` = point (1/32 cell) |
 | 0x83 attack unit | `+0x124` `0x100165e0` | order 3, `+0x29` = `+0xb8` = `+0xbc` = target (refused if null or itself) |
 
-Order handlers (tank vtable `0x100a83f0`):
+Order handlers (tank vtable `0x100a8d24`):
 
-- **1 idle, `0x10013800` -> `0x1000f6f0`** (read). With cease fire, the turret target heading `+0xcf`
+- **1 idle, `0x1000f6f0`** (read). With cease fire, the turret target heading `+0xcf`
   becomes -1, so the turret returns to the hull, and nothing else happens.
   - Otherwise: search `(0x80, 0x30, 1)`, then `0x100169b0` aims and fires both weapons at their targets
     through `+0x2ac` and `+0x2b0` (firing, issue #4).
@@ -264,6 +278,8 @@ Order handlers (tank vtable `0x100a83f0`):
     - Distance in cells is `max + min / 2`.
     - `AlarmRange` is type `+0x2a0`, `+0x2a4`, crew-interpolated (key `alarmrange`, `0x100472a1`).
       Heavy tanks 3,4; medium 7,8; light 11,12.
+    - *Unconfirmed here:* another ticket reports that `shot1_Range >> 5` is added to `AlarmRange` after
+      parsing. The parser `0x1004729e` stores the pair as it is.
   - Otherwise: search `(0x80, 0x30, 1)`. If neither weapon found a target, both are set to the attacker.
     Then the engage `+0x2b8` runs.
   - On ending it stops, sets order 0xc and clears `+0x29`, so the tank attack-moves back to the anchor.
@@ -303,11 +319,16 @@ The aiming flags `[0x100c4540]` come from `0x10001540` (read); they are for the 
 
 ## The attacker reaction (automatic pursuit)
 
-- When a shot lands, the damage code calls `0x1003ef80`. For every live unit within 2 cells of the
-  victim's cell (a 5 x 5 box), it calls the unit's `+0x178` (`0x10032640`) with the shooter.
-  `0x10032640` records the shooter in `+0x16` and resets its age `+0x1d` = 0 and `+0x1e` = 0, but only
-  if the shooter is hostile and seen by the unit's side. The callers `0x1002f9b1` and `0x10032d10` are
-  seen only (damage, issue #5).
+- A hit on a unit goes through its vtable `+0x1d0` (`0x10032c40`, read; called from `0x10041e98` and
+  `0x10041f45`, damage, issue #5).
+  - It applies the damage through `+0x1cc` and makes voice report 2 (once more than 200 ticks have
+    passed since the last hit, `+0x42`).
+  - If the shooter is hostile and seen by the victim's side, it records the shooter in `+0x16`. The age
+    `+0x1d` is reset to 0 and `+0x1e` holds the result of `+0x1cc`.
+  - It then calls `0x1003ef80`, which passes the shooter to the vtable `+0x178` (`0x10032640`) of every
+    live unit within 2 cells of the victim (a 5 x 5 box). `0x10032640` records it the same way, with
+    `+0x1e` = 0, under the same hostile-and-seen test.
+  - So nearby units learn of the attacker too. The other caller of `0x1003ef80` is `0x1002f9b1`.
 - `+0x1d` is incremented each tick (`0x100338e0`, from `0x1002dd80` in the tank update). The attacker is
   forgotten after 200 ticks.
 - In idle, a tank without hold position and with an attacker younger than 64 ticks pursues it if the
@@ -330,7 +351,7 @@ selected (`+0x1a & 8`).
 
 | Grid command | Click check | Queued code | Executor | Per-unit check | Group order |
 |---|---|---|---|---|---|
-| no armed order (right click) | - | 0xc4 | `0x10061490` | `+0x14` (`0x100149a0`) gives bits, the lowest set bit across the selection wins | bit 4 (hostile seen unit, `0x10011ec0`) -> attack unit `0x10060cb0`; bit 0x200 (ground at least 4 cells from the edge) -> move `0x10060bd0(.., 1)` |
+| no armed order (right click) | - | 0xc4 | `0x10061490` | `+0x14` (tank `0x10011ec0`) gives bits, the lowest set bit across the selection wins; `+0x18` (`0x100101f0`) then confirms each unit | bit 4 (hostile seen unit) -> attack unit `0x10060cb0`; bit 0x200 (ground at least 4 cells from the edge) -> move `0x10060bd0(.., 1)` |
 | 0x13 AVANCER | `0x10083a10` | 0x49 | `0x1005f8e0` | `+0x1c` (`0x1001b860`, always 2) | `0x10060bd0(cell, 0)` -> `0x100609c0` record 0x41 with formation |
 | 0x14 ATTAQUER | `0x10083c50` | 0xca | `0x1005fbe0` | unit under the cursor valid for `+0x8c` (`0x10033490`: alive and seen, **no hostility test**): `+0x24` (`0x10010550`); otherwise the ground: `+0x28` (`0x100108b0`) | unit: `0x10060cb0` record 0x83; ground: `0x10060d10` -> `0x10060920` record 0x42 |
 | 0x15 ASSAUT | `0x10083aa0` | 0x4b | `0x1005fb60` | `+0x20` (`0x10016f30`: rounds for a weapon) | `0x10060c70` -> `0x100609c0` record 0x49 with formation |
@@ -446,7 +467,8 @@ The last row matters even without sound.
   - `0x10032de0` changes hit points: it heals up to the maximum, or at 0 calls the death broadcast
     `0x1003edc0` with a state stored in `+0x41`;
   - `0x1003ef80` is the "attacked" notification;
-  - `0x10033550` is the expected-damage estimate;
+  - `0x10033550` is the expected-damage estimate (another ticket reports that it uses the front armour
+    only);
   - idle tanks call `0x1003ef50` -> `+0x1d4` (`0x1002dbe0`) every 64 ticks on their phase when their hit
     points are between 1/4 and 3/4 of the maximum. *Inferred:* self-repair by 1, which also updates
     `+0xb3`.
