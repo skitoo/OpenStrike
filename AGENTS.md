@@ -26,7 +26,7 @@
 - The repository is a Rust 2024 Cargo workspace. Use workspace dependencies and existing crate APIs before adding dependencies or cross-crate coupling.
 - Keep changes scoped to the crate that owns the behavior; expose a public API only when another crate or an external caller needs it.
 - Follow nearby Rust style and naming. Keep comments focused on game-specific behavior, invariants, or reverse-engineering evidence.
-- Before each commit, run `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`.
+- Before each commit, run `cargo fmt --all`, `cargo clippy --workspace --all-targets -- -D warnings` and `cargo test --workspace`. CI (`.github/workflows/ci.yml`) runs the same checks on Linux, macOS, and Windows, without game data.
 - Other useful checks: `cargo check --workspace`. Formatting is configured in `rustfmt.toml` (120 columns); `cargo fmt --all -- --check` must pass. Use `cargo test --workspace --release` when checking release behavior. To check a rendering change, run the client with `--screenshot out.png` (plus `--look-at x,y` and `--zoom z`) and look at the image; see `README.md` for the options. Data-backed tests are skipped when game data is absent, as described in `README.md`.
 
 ## Project map
