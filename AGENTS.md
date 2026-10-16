@@ -35,3 +35,17 @@
 - `crates/client`: game-data loading, mission setup, terrain, camera, UI state, and raylib rendering.
 - `docs/`: reverse-engineering notes and implementation evidence.
 - `tools/`: Python probes, validators, and extraction helpers for local analysis.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in the repo's GitHub Issues, handled with the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default triage labels, each named after its role. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repo root. See `docs/agents/domain.md`.
