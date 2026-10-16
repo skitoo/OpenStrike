@@ -1,4 +1,4 @@
-//! The vehicles' path finder, ported from `Game_Dll.dll` (`0x10061e60` and what it calls).
+//! The vehicles' path finder, reimplementing the behaviour of `Game_Dll.dll` (`0x10061e60` and what it calls).
 //!
 //! The search (`0x10061f90`) works on cells. It first labels the straight line to the goal
 //! (diagonal steps first), then runs a 32-entry ring of walkers: a walker heads straight for the

@@ -12,6 +12,7 @@
 - Treat `docs/formats.md`, `docs/movement.md`, and `docs/original-code.md` as the project references for file formats, simulation behavior, and original-code addresses. Update the relevant note when implementation changes establish or correct a reverse-engineered fact.
 - Mark deductions as inferred or unconfirmed in code comments and documentation; distinguish observed behavior from hypotheses.
 - Original Sudden Strike data is user-provided and copyrighted. Use local files under `data/SuddenStrikeGold/` for investigation; never add game data, extracted assets, binaries, or analysis databases to the repository.
+- Reimplement behavior; never copy the original code. Do not paste disassembly or decompiled pseudo-code into the repository (code, comments, docs, tests, or commit messages), and do not transliterate it line by line. Describe what the original does in the notes, citing addresses, then write the Rust from that description. Say "reimplements" or "follows", not "ported from".
 - Data-backed tests may require a local game installation. Keep tests usable without that data: read the install from `OPENSTRIKE_DATA` (default `data/SuddenStrikeGold/`) and return early when it is absent, as `data_dir()` does in `crates/client/tests/terrain.rs`.
 - Screenshots of the engine running may be committed under `docs/images/`. Sprites, extracted files, and anything else taken from the game data may not.
 - Differences from the original that were accepted on purpose are recorded in `docs/`; do not "fix" them without checking there first.
