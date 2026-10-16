@@ -12,6 +12,10 @@ buildings, bridges and piers; a platoon of six tanks can be selected and sent ar
 moving and finding their way with the original game's rules and path finder.
 File formats are being reverse engineered; see `docs/formats.md`, `docs/movement.md` and the address index `docs/original-code.md`.
 
+## Screenshot
+
+![OpenStrike rendering a map with terrain, buildings and the minimap](docs/images/gameplay.png)
+
 ## Architecture
 
 Functional core, imperative shell:
