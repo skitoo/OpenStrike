@@ -7,9 +7,16 @@ OpenStrike ships no game data. You need your own copy of *Sudden Strike Gold* (S
 
 ## Status
 
-Early engine: a map is drawn in the game's isometric view with its ground, roads, rails, trees, fences and
-buildings, bridges and piers; a platoon of six tanks can be selected and sent around water and buildings,
-moving and finding their way with the original game's rules and path finder.
+Early engine, not yet a game: nothing fights yet.
+
+- A mission map is drawn in the game's isometric view with its ground, roads, rails, trees, fences,
+  buildings, bridges and piers, in the state the map stores.
+- The mission's own tanks are placed for each player and side. They move and find their way with the original
+  game's rules and path finder, alone or in formation.
+- Each side sees only what its units see, with the original fog of war.
+- The original interface is drawn: panel, minimap with the view frame and units, orders grid, information bar
+  with tooltips and the hovered unit's details, status bars, and unit groups. Only the stop and hold orders
+  act so far.
 File formats are being reverse engineered; see `docs/formats.md`, `docs/movement.md` and the address index `docs/original-code.md`.
 
 ## Screenshot
@@ -39,9 +46,12 @@ cargo run --release -p openstrike -- path/to/map.ssm --climate winter
 cargo test --workspace --release                        # data tests are skipped without the game
 ```
 
-Controls: left click or drag to select (Shift adds), right click to move, arrows / WASD or middle drag to scroll,
-wheel to zoom, B to show blocked cell quarters.
-Debug options: `--look-at x,y`, `--zoom z`, `--show-blocked`, `--screenshot file.png`.
+Controls: left click or drag to select (Shift adds), right click to move, arrows or middle drag to scroll,
+wheel to zoom. As in the original: the orders grid answers the 3 x 3 block of keys under the digits (Q W E / A S D /
+Z X C on QWERTY), R and T toggle the hold buttons, Ctrl + digit makes a group and the digit selects it (twice
+centres the view). B shows blocked cell quarters.
+Options: `--data dir` (default `data/SuddenStrikeGold/`), `--climate`; debug: `--look-at x,y`, `--zoom z`,
+`--show-blocked`, `--screenshot file.png`.
 
 ## Layout
 
