@@ -20,7 +20,7 @@
 
 ## Working in the Rust workspace
 
-- Do not add co-author trailers or co-author attribution to commit messages.
+- Do not add co-author trailers or any AI or tool attribution (such as "Generated with Claude Code") to commit messages, pull requests, issues, or comments.
 - Write commit messages using Conventional Commits: `type(scope): imperative summary` (for example, `feat(client): add fog of war`). Scopes are crate or directory names (`formats`, `sim`, `client`, `tools`, or `formats,client`); mark breaking behavior changes with `!`.
 - Code, docs, comments, and commit messages are in English.
 - The repository is a Rust 2024 Cargo workspace. Use workspace dependencies and existing crate APIs before adding dependencies or cross-crate coupling.
