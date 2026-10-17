@@ -17,6 +17,7 @@ Work that changes the repository lands through its own pull request, one per iss
 
 - Branch from `origin/main` (`git switch -c <type>/<short-name> origin/main`), commit, push, then `gh pr create --base main`.
 - Put `Closes #<n>` in the PR body. The issue stays open until the PR merges into `main`, which closes it; do not close it by hand.
+- PRs merge by rebase, the only method the repository allows: keep each commit a self-contained Conventional Commit, since every one lands on `main` as is. `main` is protected: CI must pass and direct pushes are refused.
 - Comments on the issue may link the PR, but the PR is where the change is reviewed.
 
 Infer the repo from `git remote -v`; `gh` does this automatically when run inside a clone.
